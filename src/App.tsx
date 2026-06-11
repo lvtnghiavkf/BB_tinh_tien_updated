@@ -17,11 +17,12 @@ import Checkout from './components/Checkout';
 import Inventory from './components/Inventory';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
+import Data from './components/Data';
 import Login from './components/Login';
 import InvoicePrint from './components/InvoicePrint';
 import {
   ShoppingCart, Box, BarChart3, Settings as SettingsIcon,
-  Clock, Store, Printer, LogOut, User
+  Clock, Store, Printer, LogOut, User, Database
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -32,7 +33,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(INITIAL_STORE_CONFIG);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [activeTab, setActiveTab] = useState<'checkout' | 'inventory' | 'reports' | 'settings'>('checkout');
+  const [activeTab, setActiveTab] = useState<'checkout' | 'inventory' | 'data' | 'reports' | 'settings'>('checkout');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedReprintInvoice, setSelectedReprintInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -163,6 +164,19 @@ export default function App() {
     setStoreConfig(updatedConfig);
   };
 
+  const handleUpdateProductsStock = async (updates: { id: string; delta: number }[]) => {
+    for (const u of updates) {
+      const product = products.find(p => p.id === u.id);
+      if (product) {
+        await dbUpdateProduct({ ...product, stock: product.stock + u.delta });
+      }
+    }
+    setProducts(prev => prev.map(p => {
+      const u = updates.find(x => x.id === p.id);
+      return u ? { ...p, stock: p.stock + u.delta } : p;
+    }));
+  };
+
   const lowStockCount = products.filter(p => p.stock <= p.minStock).length;
   const isManager = currentUser?.role === 'manager';
 
@@ -255,6 +269,19 @@ export default function App() {
               </button>
             )}
 
+            {isManager && (
+              <button
+                onClick={() => setActiveTab('data')}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                  activeTab === 'data'
+                    ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" /> Dữ liệu
+              </button>
+            )}
+
             <button
               onClick={() => setActiveTab('reports')}
               className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
@@ -333,6 +360,13 @@ export default function App() {
                 onUpdateProduct={handleUpdateProduct}
                 onDeleteProduct={handleDeleteProduct}
                 onRestockProduct={handleRestockProduct}
+              />
+            )}
+            {activeTab === 'data' && isManager && (
+              <Data
+                invoices={invoices}
+                products={products}
+                onUpdateProductsStock={handleUpdateProductsStock}
               />
             )}
             {activeTab === 'reports' && (

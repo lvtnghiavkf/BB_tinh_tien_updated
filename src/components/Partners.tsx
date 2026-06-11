@@ -1,0 +1,431 @@
+import React, { useState, useMemo } from 'react';
+import { Partner, PurchaseOrder } from '../types';
+import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+
+interface PartnersProps {
+  partners: Partner[];
+  purchaseOrders: PurchaseOrder[];
+  onAdd: (p: Partner) => void;
+  onUpdate: (p: Partner) => void;
+  onDelete: (id: string) => void;
+  onUpdateOrder: (o: PurchaseOrder) => void;
+}
+
+const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
+
+type Form = { fullName: string; brands: string[]; phones: string[]; emails: string[]; notes: string };
+const EMPTY: Form = { fullName: '', brands: [''], phones: [''], emails: [''], notes: '' };
+
+export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, onDelete, onUpdateOrder }: PartnersProps) {
+  const [search, setSearch] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<Form>(EMPTY);
+  const [debtFor, setDebtFor] = useState<Partner | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [payingOrder, setPayingOrder] = useState<PurchaseOrder | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payFull, setPayFull] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const filtered = useMemo(() => {
+    if (!search) return partners;
+    const q = search.toLowerCase();
+    return partners.filter(p =>
+      p.fullName.toLowerCase().includes(q) ||
+      p.brands.some(b => b.toLowerCase().includes(q)) ||
+      p.phones.some(ph => ph.includes(q))
+    );
+  }, [partners, search]);
+
+  // Debt per partner
+  const partnerDebt = useMemo(() => {
+    const map: Record<string, { total: number; paid: number }> = {};
+    purchaseOrders.forEach(o => {
+      if (o.type !== 'import' || !o.partnerId) return;
+      if (!map[o.partnerId]) map[o.partnerId] = { total: 0, paid: 0 };
+      map[o.partnerId].total += o.totalAmount;
+      map[o.partnerId].paid += o.paidAmount;
+    });
+    return map;
+  }, [purchaseOrders]);
+
+  const partnerOrders = useMemo(() => {
+    if (!debtFor) return [];
+    return purchaseOrders.filter(o => o.partnerId === debtFor.id && o.type === 'import')
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [debtFor, purchaseOrders]);
+
+  function openAdd() {
+    setEditingId(null);
+    setForm({ ...EMPTY, brands: [''], phones: [''], emails: [''] });
+    setErrors({});
+    setShowForm(true);
+  }
+
+  function openEdit(p: Partner) {
+    setEditingId(p.id);
+    setForm({
+      fullName: p.fullName,
+      brands: p.brands.length ? [...p.brands] : [''],
+      phones: p.phones.length ? [...p.phones] : [''],
+      emails: p.emails.length ? [...p.emails] : [''],
+      notes: p.notes ?? '',
+    });
+    setErrors({});
+    setShowForm(true);
+  }
+
+  function cleanArr(arr: string[]) { return arr.map(s => s.trim()).filter(Boolean); }
+
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!form.fullName.trim()) e.fullName = 'Vui lòng nhập họ tên';
+    return e;
+  }
+
+  async function handleSave() {
+    const e = validate();
+    if (Object.keys(e).length > 0) { setErrors(e); return; }
+    setSaving(true);
+    try {
+      const base = { fullName: form.fullName.trim(), brands: cleanArr(form.brands), phones: cleanArr(form.phones), emails: cleanArr(form.emails), notes: form.notes.trim() || undefined };
+      if (editingId) {
+        const existing = partners.find(p => p.id === editingId)!;
+        await onUpdate({ ...existing, ...base });
+      } else {
+        await onAdd({ id: `part_${Date.now()}`, ...base, createdAt: new Date().toISOString() });
+      }
+      setShowForm(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openPay(o: PurchaseOrder) {
+    const remaining = o.totalAmount - o.paidAmount;
+    setPayingOrder(o);
+    setPayAmount(String(remaining));
+    setPayFull(false);
+  }
+
+  async function confirmPay() {
+    if (!payingOrder) return;
+    const remaining = payingOrder.totalAmount - payingOrder.paidAmount;
+    const amount = payFull ? remaining : Math.min(Number(payAmount) || 0, remaining);
+    if (amount <= 0) return;
+    setSaving(true);
+    try {
+      await onUpdateOrder({ ...payingOrder, paidAmount: payingOrder.paidAmount + amount });
+      setPayingOrder(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function dynField(field: keyof Pick<Form, 'brands' | 'phones' | 'emails'>, placeholder: string) {
+    const arr = form[field] as string[];
+    return (
+      <div className="space-y-1.5">
+        {arr.map((val, i) => (
+          <div key={i} className="flex gap-2">
+            <input value={val} onChange={e => {
+              const next = [...arr]; next[i] = e.target.value;
+              setForm(f => ({ ...f, [field]: next }));
+            }} className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" placeholder={placeholder} />
+            {arr.length > 1 && (
+              <button type="button" onClick={() => setForm(f => ({ ...f, [field]: arr.filter((_, j) => j !== i) }))}
+                className="p-2 text-rose-400 hover:text-rose-600 cursor-pointer"><X className="w-4 h-4" /></button>
+            )}
+          </div>
+        ))}
+        {arr.length < 5 && (
+          <button type="button" onClick={() => setForm(f => ({ ...f, [field]: [...arr, ''] }))}
+            className="text-xs text-blue-600 hover:text-blue-700 font-bold cursor-pointer">+ Thêm</button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm tên, thương hiệu, SĐT..."
+            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+        </div>
+        <button onClick={openAdd}
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer whitespace-nowrap">
+          <Plus className="w-4 h-4" /> Thêm đối tác
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="p-12 text-center text-slate-400">
+            <Handshake className="w-10 h-10 mx-auto stroke-1 mb-2 text-slate-300" />
+            <p className="text-sm font-semibold">{search ? 'Không tìm thấy đối tác' : 'Chưa có đối tác nào'}</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="px-4 py-3">Họ tên</th>
+                  <th className="px-4 py-3">Thương hiệu</th>
+                  <th className="px-4 py-3">Điện thoại</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3 text-right">Công nợ còn lại</th>
+                  <th className="px-4 py-3 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map(p => {
+                  const debt = partnerDebt[p.id] ?? { total: 0, paid: 0 };
+                  const remaining = debt.total - debt.paid;
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-50/50 transition">
+                      <td className="px-4 py-3 font-semibold text-slate-800">{p.fullName}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {p.brands.map(b => <span key={b} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] font-bold rounded-md">{b}</span>)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 font-mono text-xs">{p.phones[0] || '—'}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{p.emails[0] || '—'}</td>
+                      <td className="px-4 py-3 text-right">
+                        {remaining > 0
+                          ? <span className="font-bold font-mono text-rose-600">{formatVND(remaining)}</span>
+                          : <span className="text-slate-400 text-xs">Hết nợ</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => setDebtFor(p)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer" title="Xem công nợ">
+                            <ArrowDownToLine className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => openEdit(p)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer" title="Sửa">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => setDeleteConfirm(p.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer" title="Xóa">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Add/Edit Modal */}
+      <AnimatePresence>
+        {showForm && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-md my-4">
+              <div className="flex items-center justify-between p-5 border-b border-slate-200">
+                <h3 className="font-bold text-slate-800">{editingId ? 'Sửa đối tác' : 'Thêm đối tác'}</h3>
+                <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="p-5 space-y-4 overflow-y-auto max-h-[65vh]">
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-1 block">Họ tên <span className="text-rose-500">*</span></label>
+                  <input value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 ${errors.fullName ? 'border-rose-400' : 'border-slate-200'}`}
+                    placeholder="Công ty ABC" />
+                  {errors.fullName && <p className="text-xs text-rose-500 mt-1">{errors.fullName}</p>}
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-1 flex items-center gap-1"><Tag className="w-3.5 h-3.5" /> Thương hiệu</label>
+                  {dynField('brands', 'VD: Coca-Cola, Hảo Hảo...')}
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-1 flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> Điện thoại</label>
+                  {dynField('phones', '0912 345 678')}
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-1 flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> Email</label>
+                  {dynField('emails', 'contact@company.com')}
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-1 block">Ghi chú</label>
+                  <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
+                    placeholder="Điều khoản, ghi chú thêm..." />
+                </div>
+              </div>
+              <div className="flex gap-3 p-5 border-t border-slate-200">
+                <button onClick={() => setShowForm(false)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold transition cursor-pointer">Hủy</button>
+                <button onClick={handleSave} disabled={saving}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer">
+                  {saving ? 'Đang lưu...' : 'Lưu'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirm */}
+      <AnimatePresence>
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+              <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Trash2 className="w-6 h-6 text-rose-600" />
+              </div>
+              <h3 className="font-bold text-slate-800 mb-2">Xóa đối tác?</h3>
+              <p className="text-sm text-slate-500 mb-5">Phiếu nhập hàng của đối tác vẫn được giữ lại.</p>
+              <div className="flex gap-3">
+                <button onClick={() => setDeleteConfirm(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={async () => { await onDelete(deleteConfirm); setDeleteConfirm(null); }}
+                  className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold cursor-pointer">Xóa</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Debt Modal */}
+      <AnimatePresence>
+        {debtFor && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+              <div className="flex items-center justify-between p-5 border-b border-slate-200">
+                <div>
+                  <h3 className="font-bold text-slate-800">Công nợ nhập hàng — {debtFor.fullName}</h3>
+                  {debtFor.phones[0] && <p className="text-xs text-slate-500 font-mono mt-0.5">{debtFor.phones[0]}</p>}
+                </div>
+                <button onClick={() => setDebtFor(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+
+              {/* Summary */}
+              {(() => {
+                const debt = partnerDebt[debtFor.id] ?? { total: 0, paid: 0 };
+                const remaining = debt.total - debt.paid;
+                return (
+                  <div className="px-5 py-3 border-b border-slate-100 flex gap-6 flex-wrap bg-slate-50">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Tổng nhập</p>
+                      <p className="text-lg font-extrabold text-slate-800 font-mono">{formatVND(debt.total)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Đã thanh toán</p>
+                      <p className="text-lg font-extrabold text-emerald-600 font-mono">{formatVND(debt.paid)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Còn nợ</p>
+                      <p className={`text-lg font-extrabold font-mono ${remaining > 0 ? 'text-rose-600' : 'text-slate-400'}`}>{formatVND(remaining)}</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Orders list */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                {partnerOrders.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400 text-sm">Chưa có phiếu nhập hàng nào.</div>
+                ) : partnerOrders.map(o => {
+                  const rem = o.totalAmount - o.paidAmount;
+                  return (
+                    <div key={o.id} className="border border-slate-200 rounded-xl p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-xs text-slate-600">{o.id}</span>
+                        <span className="text-xs text-slate-400">{new Date(o.timestamp).toLocaleDateString('vi-VN')}</span>
+                      </div>
+                      <div className="text-xs text-slate-600 space-y-0.5">
+                        {o.items.map((it, i) => (
+                          <div key={i} className="flex justify-between">
+                            <span>{it.productName} <span className="text-slate-400">×{it.quantity}</span></span>
+                            <span className="font-mono">{formatVND(it.unitCost * it.quantity)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {o.notes && <p className="text-xs text-slate-400 italic">{o.notes}</p>}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                        <div className="text-xs space-y-0.5">
+                          <p>Tổng: <span className="font-mono font-bold">{formatVND(o.totalAmount)}</span></p>
+                          <p>Đã trả: <span className="font-mono text-emerald-600">{formatVND(o.paidAmount)}</span></p>
+                          <p>Còn: <span className={`font-mono font-bold ${rem > 0 ? 'text-rose-600' : 'text-slate-400'}`}>{formatVND(rem)}</span></p>
+                        </div>
+                        {rem > 0 && (
+                          <button onClick={() => openPay(o)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer">
+                            Thanh toán
+                          </button>
+                        )}
+                        {rem <= 0 && <span className="text-xs text-emerald-600 font-bold">Đã thanh toán đủ</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Payment Modal */}
+      <AnimatePresence>
+        {payingOrder && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              <h3 className="font-bold text-slate-800 mb-1">Thanh toán phiếu nhập</h3>
+              <p className="text-xs text-slate-500 font-mono mb-4">{payingOrder.id}</p>
+              <div className="space-y-3 mb-5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Tổng phiếu:</span>
+                  <span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Đã trả:</span>
+                  <span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Còn nợ:</span>
+                  <span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span>
+                </div>
+                <div className="border-t border-slate-200 pt-3 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={payFull} onChange={e => {
+                      setPayFull(e.target.checked);
+                      if (e.target.checked) setPayAmount(String(payingOrder.totalAmount - payingOrder.paidAmount));
+                    }} className="w-4 h-4 cursor-pointer" />
+                    <span className="text-sm font-medium text-slate-700">Thanh toán toàn bộ</span>
+                  </label>
+                  {!payFull && (
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 mb-1 block">Số tiền thanh toán</label>
+                      <input type="number" min={0} max={payingOrder.totalAmount - payingOrder.paidAmount} value={payAmount}
+                        onChange={e => setPayAmount(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={confirmPay} disabled={saving}
+                  className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                  {saving ? 'Đang lưu...' : 'Xác nhận'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

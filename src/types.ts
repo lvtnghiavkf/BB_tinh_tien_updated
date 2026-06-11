@@ -62,3 +62,55 @@ export interface StaffUser {
   role: UserRole;
   pin: string;
 }
+
+export interface Customer {
+  id: string;
+  fullName: string;
+  birthDate?: string; // YYYY-MM-DD
+  phone: string;
+  email?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface Partner {
+  id: string;
+  fullName: string;
+  brands: string[];
+  phones: string[];
+  emails: string[];
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PurchaseOrderItem {
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitCost: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  type: 'import' | 'export';
+  partnerId: string;
+  partnerName: string;
+  timestamp: string;
+  items: PurchaseOrderItem[];
+  totalAmount: number;
+  paidAmount: number;
+  notes?: string;
+}
+
+export interface SalaryEntry {
+  id: string;
+  fullName: string;
+  phone: string;
+  amount: number;
+  calcType: 'lump' | 'daily';
+  dateFrom: string; // YYYY-MM-DD
+  dateTo: string;   // YYYY-MM-DD
+  notes?: string;
+  createdAt: string;
+}

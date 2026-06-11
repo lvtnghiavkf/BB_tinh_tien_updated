@@ -1,0 +1,412 @@
+import React, { useState, useMemo } from 'react';
+import { Product, Partner, PurchaseOrder, PurchaseOrderItem } from '../types';
+import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, Filter, ChevronsUpDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+
+interface PurchaseOrdersProps {
+  products: Product[];
+  partners: Partner[];
+  orders: PurchaseOrder[];
+  onAdd: (o: PurchaseOrder) => void;
+  onUpdate: (o: PurchaseOrder) => void;
+  onDelete: (id: string) => void;
+  onUpdateProductsStock: (updates: { id: string; delta: number }[]) => void;
+}
+
+const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
+
+type OrderType = 'all' | 'import' | 'export';
+
+type DraftItem = { productId: string; productName: string; sku: string; quantity: number; unitCost: number };
+
+export default function PurchaseOrders({ products, partners, orders, onAdd, onUpdate, onDelete, onUpdateProductsStock }: PurchaseOrdersProps) {
+  const [typeFilter, setTypeFilter] = useState<OrderType>('all');
+  const [partnerFilter, setPartnerFilter] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [payingOrder, setPayingOrder] = useState<PurchaseOrder | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payFull, setPayFull] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Create form state
+  const [draftType, setDraftType] = useState<'import' | 'export'>('import');
+  const [draftPartnerId, setDraftPartnerId] = useState('');
+  const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0, 16));
+  const [draftNotes, setDraftNotes] = useState('');
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }]);
+
+  const filtered = useMemo(() => {
+    return orders.filter(o => {
+      if (typeFilter !== 'all' && o.type !== typeFilter) return false;
+      if (partnerFilter && o.partnerId !== partnerFilter) return false;
+      return true;
+    });
+  }, [orders, typeFilter, partnerFilter]);
+
+  const draftTotal = useMemo(() =>
+    draftItems.reduce((s, it) => s + it.quantity * it.unitCost, 0), [draftItems]);
+
+  function resetCreate() {
+    setDraftType('import');
+    setDraftPartnerId('');
+    setDraftDate(new Date().toISOString().slice(0, 16));
+    setDraftNotes('');
+    setDraftItems([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }]);
+  }
+
+  function setItemProduct(idx: number, productId: string) {
+    const prod = products.find(p => p.id === productId);
+    setDraftItems(prev => prev.map((it, i) => i === idx ? {
+      ...it,
+      productId,
+      productName: prod?.name ?? '',
+      sku: prod?.sku ?? '',
+      unitCost: prod?.costPrice ?? 0,
+    } : it));
+  }
+
+  async function handleCreate() {
+    const validItems = draftItems.filter(it => it.productId && it.quantity > 0);
+    if (validItems.length === 0) return;
+    const partner = partners.find(p => p.id === draftPartnerId);
+    const order: PurchaseOrder = {
+      id: `PO${Date.now()}`,
+      type: draftType,
+      partnerId: draftPartnerId,
+      partnerName: partner?.fullName ?? '',
+      timestamp: new Date(draftDate).toISOString(),
+      items: validItems.map(it => ({ productId: it.productId, productName: it.productName, sku: it.sku, quantity: it.quantity, unitCost: it.unitCost })),
+      totalAmount: validItems.reduce((s, it) => s + it.quantity * it.unitCost, 0),
+      paidAmount: 0,
+      notes: draftNotes.trim() || undefined,
+    };
+    setSaving(true);
+    try {
+      await onAdd(order);
+      if (draftType === 'import') {
+        onUpdateProductsStock(validItems.map(it => ({ id: it.productId, delta: it.quantity })));
+      }
+      setShowCreate(false);
+      resetCreate();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openPay(o: PurchaseOrder) {
+    setPayingOrder(o);
+    setPayAmount(String(o.totalAmount - o.paidAmount));
+    setPayFull(false);
+  }
+
+  async function confirmPay() {
+    if (!payingOrder) return;
+    const remaining = payingOrder.totalAmount - payingOrder.paidAmount;
+    const amount = payFull ? remaining : Math.min(Number(payAmount) || 0, remaining);
+    if (amount <= 0) return;
+    setSaving(true);
+    try {
+      await onUpdate({ ...payingOrder, paidAmount: payingOrder.paidAmount + amount });
+      setPayingOrder(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row items-stretch gap-3">
+        <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1 border border-slate-200">
+          {(['all', 'import', 'export'] as OrderType[]).map(t => (
+            <button key={t} onClick={() => setTypeFilter(t)}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${typeFilter === t ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+              {t === 'all' ? 'Tất cả' : t === 'import' ? '↓ Nhập hàng' : '↑ Xuất hàng'}
+            </button>
+          ))}
+        </div>
+        <select value={partnerFilter} onChange={e => setPartnerFilter(e.target.value)}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-blue-500 cursor-pointer">
+          <option value="">Tất cả đối tác</option>
+          {partners.map(p => <option key={p.id} value={p.id}>{p.fullName}</option>)}
+        </select>
+        <button onClick={() => { resetCreate(); setShowCreate(true); }}
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer whitespace-nowrap ml-auto">
+          <Plus className="w-4 h-4" /> Tạo phiếu
+        </button>
+      </div>
+
+      {/* List */}
+      <div className="space-y-3">
+        {filtered.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
+            <ChevronsUpDown className="w-10 h-10 mx-auto stroke-1 mb-2 text-slate-300" />
+            <p className="text-sm font-semibold">Chưa có phiếu nào</p>
+          </div>
+        ) : filtered.map(o => {
+          const remaining = o.totalAmount - o.paidAmount;
+          const isOpen = expandedId === o.id;
+          return (
+            <div key={o.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 cursor-pointer hover:bg-slate-50/60 transition"
+                onClick={() => setExpandedId(isOpen ? null : o.id)}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${o.type === 'import' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                    {o.type === 'import' ? <ArrowDownToLine className="w-4 h-4" /> : <ArrowUpFromLine className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm text-slate-800">{o.type === 'import' ? 'Phiếu nhập hàng' : 'Phiếu xuất hàng'}</p>
+                    <p className="text-xs text-slate-500 font-mono">{o.id} · {new Date(o.timestamp).toLocaleDateString('vi-VN')}</p>
+                    {o.partnerName && <p className="text-xs text-slate-500">{o.partnerName}</p>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-right shrink-0">
+                  <div>
+                    <p className="font-mono font-bold text-slate-800">{formatVND(o.totalAmount)}</p>
+                    {o.type === 'import' && (
+                      <p className={`text-xs font-mono ${remaining > 0 ? 'text-rose-600 font-bold' : 'text-emerald-600'}`}>
+                        {remaining > 0 ? `Còn nợ: ${formatVND(remaining)}` : 'Đã thanh toán đủ'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-1">
+                    {o.type === 'import' && remaining > 0 && (
+                      <button onClick={e => { e.stopPropagation(); openPay(o); }}
+                        className="px-2 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-md text-xs font-bold cursor-pointer transition">
+                        Trả nợ
+                      </button>
+                    )}
+                    <button onClick={e => { e.stopPropagation(); setDeleteConfirm(o.id); }}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <AnimatePresence>
+                {isOpen && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden">
+                    <div className="px-4 pb-4 border-t border-slate-100">
+                      <table className="w-full text-xs mt-3">
+                        <thead>
+                          <tr className="text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100">
+                            <th className="pb-2 text-left">Sản phẩm</th>
+                            <th className="pb-2 text-right">SL</th>
+                            <th className="pb-2 text-right">Đơn giá</th>
+                            <th className="pb-2 text-right">Thành tiền</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {o.items.map((it, i) => (
+                            <tr key={i} className="text-slate-700">
+                              <td className="py-1.5">{it.productName} <span className="text-slate-400 font-mono">({it.sku})</span></td>
+                              <td className="py-1.5 text-right">{it.quantity}</td>
+                              <td className="py-1.5 text-right font-mono">{formatVND(it.unitCost)}</td>
+                              <td className="py-1.5 text-right font-mono font-bold">{formatVND(it.unitCost * it.quantity)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t border-slate-200 font-bold text-slate-800">
+                            <td colSpan={3} className="pt-2 text-right pr-4">Tổng cộng:</td>
+                            <td className="pt-2 text-right font-mono">{formatVND(o.totalAmount)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                      {o.notes && <p className="text-xs text-slate-400 mt-2 italic">{o.notes}</p>}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Create Modal */}
+      <AnimatePresence>
+        {showCreate && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-4">
+              <div className="flex items-center justify-between p-5 border-b border-slate-200">
+                <h3 className="font-bold text-slate-800">Tạo phiếu xuất nhập hàng</h3>
+                <button onClick={() => setShowCreate(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+
+              <div className="p-5 space-y-5 overflow-y-auto max-h-[70vh]">
+                {/* Type & Partner */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-2 block">Loại phiếu</label>
+                    <div className="flex gap-2">
+                      {(['import', 'export'] as const).map(t => (
+                        <button key={t} onClick={() => setDraftType(t)}
+                          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-bold transition cursor-pointer ${draftType === t ? (t === 'import' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-amber-500 bg-amber-50 text-amber-700') : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+                          {t === 'import' ? <><ArrowDownToLine className="w-4 h-4" /> Nhập hàng</> : <><ArrowUpFromLine className="w-4 h-4" /> Xuất hàng</>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-2 block">
+                      Đối tác {draftType === 'import' ? <span className="text-rose-500">*</span> : <span className="text-slate-400">(tùy chọn)</span>}
+                    </label>
+                    <select value={draftPartnerId} onChange={e => setDraftPartnerId(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-500 cursor-pointer">
+                      <option value="">— Chọn đối tác —</option>
+                      {partners.map(p => <option key={p.id} value={p.id}>{p.fullName}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-2 block">Ngày giờ</label>
+                    <input type="datetime-local" value={draftDate} onChange={e => setDraftDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-2 block">Ghi chú</label>
+                    <input value={draftNotes} onChange={e => setDraftNotes(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+                      placeholder="Ghi chú phiếu..." />
+                  </div>
+                </div>
+
+                {/* Items */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-xs font-bold text-slate-600">Danh sách hàng hóa</label>
+                    <button onClick={() => setDraftItems(prev => [...prev, { productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }])}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-bold cursor-pointer flex items-center gap-1">
+                      <Plus className="w-3.5 h-3.5" /> Thêm dòng
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {draftItems.map((item, idx) => (
+                      <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                        <div className="col-span-5">
+                          <select value={item.productId} onChange={e => setItemProduct(idx, e.target.value)}
+                            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer">
+                            <option value="">— Chọn sản phẩm —</option>
+                            {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <input type="number" min={1} value={item.quantity} onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Number(e.target.value) || 1 } : it))}
+                            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs text-right focus:outline-none focus:border-blue-500" placeholder="SL" />
+                        </div>
+                        <div className="col-span-3">
+                          <input type="number" min={0} value={item.unitCost} onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, unitCost: Number(e.target.value) || 0 } : it))}
+                            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs text-right font-mono focus:outline-none focus:border-blue-500" placeholder="Đơn giá" />
+                        </div>
+                        <div className="col-span-1 text-right text-xs font-mono text-slate-600">
+                          {(item.quantity * item.unitCost > 0) ? (item.quantity * item.unitCost / 1000).toFixed(0) + 'k' : '—'}
+                        </div>
+                        <div className="col-span-1 flex justify-center">
+                          {draftItems.length > 1 && (
+                            <button onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}
+                              className="text-slate-400 hover:text-rose-600 cursor-pointer transition">
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end mt-3 pt-3 border-t border-slate-200">
+                    <div className="text-sm font-bold text-slate-800">
+                      Tổng cộng: <span className="font-mono text-blue-700">{formatVND(draftTotal)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {draftType === 'import' && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700 flex items-center gap-2">
+                    <ArrowDownToLine className="w-4 h-4 shrink-0" />
+                    Phiếu nhập hàng sẽ tự động cộng vào tồn kho sau khi tạo.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 p-5 border-t border-slate-200">
+                <button onClick={() => setShowCreate(false)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold transition cursor-pointer">Hủy</button>
+                <button onClick={handleCreate} disabled={saving || (draftItems.filter(it => it.productId).length === 0)}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer">
+                  {saving ? 'Đang lưu...' : 'Tạo phiếu'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirm */}
+      <AnimatePresence>
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+              <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Trash2 className="w-6 h-6 text-rose-600" />
+              </div>
+              <h3 className="font-bold text-slate-800 mb-2">Xóa phiếu?</h3>
+              <p className="text-sm text-slate-500 mb-1">Phiếu sẽ bị xóa vĩnh viễn.</p>
+              <p className="text-xs text-amber-600 mb-5">Lưu ý: Tồn kho sẽ không tự động điều chỉnh lại.</p>
+              <div className="flex gap-3">
+                <button onClick={() => setDeleteConfirm(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={async () => { await onDelete(deleteConfirm); setDeleteConfirm(null); }}
+                  className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold cursor-pointer">Xóa</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Payment Modal */}
+      <AnimatePresence>
+        {payingOrder && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              <h3 className="font-bold text-slate-800 mb-1">Thanh toán phiếu nhập</h3>
+              <p className="text-xs text-slate-500 font-mono mb-4">{payingOrder.id} · {payingOrder.partnerName}</p>
+              <div className="space-y-3 mb-5">
+                <div className="flex justify-between text-sm"><span className="text-slate-600">Tổng phiếu:</span><span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-600">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-600">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
+                <div className="border-t border-slate-200 pt-3 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={payFull} onChange={e => { setPayFull(e.target.checked); if (e.target.checked) setPayAmount(String(payingOrder.totalAmount - payingOrder.paidAmount)); }} className="w-4 h-4 cursor-pointer" />
+                    <span className="text-sm font-medium text-slate-700">Thanh toán toàn bộ</span>
+                  </label>
+                  {!payFull && (
+                    <div>
+                      <label className="text-xs font-bold text-slate-600 mb-1 block">Số tiền</label>
+                      <input type="number" min={0} value={payAmount} onChange={e => setPayAmount(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={confirmPay} disabled={saving}
+                  className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                  {saving ? 'Đang lưu...' : 'Xác nhận'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
