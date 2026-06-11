@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Print Styles */
+@media print {
+  /* Hide every element on the page */
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* Show only the print area and its children */
+  #print-area, #print-area * {
+    visibility: visible !important;
+  }
+  
+  #print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 60mm !important; /* Thermal receipt standard K80/K57 width estimation */
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 11px !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+  }
+
+  /* Remove headers and footers from browser printing */
+  @page {
+    margin: 0;
+    size: auto;
+  }
+}
+
+/* Custom Webkit scrollbar for clean POS feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+

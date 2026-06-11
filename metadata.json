@@ -1,0 +1,6 @@
+{
+  "name": "Bé Bự",
+  "description": "Hệ thống quản lý bán hàng (POS), quản lý kho hàng và báo cáo doanh thu thời gian thực, hỗ trợ quét mã VietQR và in hóa đơn tự động chuyên nghiệp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
