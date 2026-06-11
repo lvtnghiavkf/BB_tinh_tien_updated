@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Partner, PurchaseOrder } from '../types';
-import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine, Download, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
 
 interface PartnersProps {
   partners: Partner[];
@@ -29,6 +30,46 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
   const [payFull, setPayFull] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const xlsxRef = useRef<HTMLInputElement>(null);
+
+  function exportExcel() {
+    const ws = XLSX.utils.json_to_sheet(partners.map(p => ({
+      'Họ tên': p.fullName,
+      'Thương hiệu': p.brands.join('; '),
+      'Điện thoại': p.phones.join('; '),
+      'Email': p.emails.join('; '),
+      'Ghi chú': p.notes ?? '',
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Đối tác');
+    XLSX.writeFile(wb, `doi_tac_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  async function handleImportExcel(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      const wb = XLSX.read(ev.target?.result, { type: 'binary' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws) as any[];
+      for (const r of rows) {
+        if (!r['Họ tên']) continue;
+        const splitSemi = (s: string) => s ? s.split(';').map((x: string) => x.trim()).filter(Boolean) : [];
+        const p: Partner = {
+          id: `part_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          fullName: String(r['Họ tên']),
+          brands: splitSemi(String(r['Thương hiệu'] ?? '')),
+          phones: splitSemi(String(r['Điện thoại'] ?? '')),
+          emails: splitSemi(String(r['Email'] ?? '')),
+          notes: r['Ghi chú'] ? String(r['Ghi chú']) : undefined,
+          createdAt: new Date().toISOString(),
+        };
+        try { await onAdd(p); } catch { /* skip dup */ }
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
+  }
 
   const filtered = useMemo(() => {
     if (!search) return partners;
@@ -157,6 +198,15 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm tên, thương hiệu, SĐT..."
             className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
         </div>
+        <input ref={xlsxRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportExcel} />
+        <button onClick={() => xlsxRef.current?.click()}
+          className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer transition whitespace-nowrap">
+          <Upload className="w-4 h-4" /> Nhập Excel
+        </button>
+        <button onClick={exportExcel}
+          className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer transition whitespace-nowrap">
+          <Download className="w-4 h-4" /> Xuất Excel
+        </button>
         <button onClick={openAdd}
           className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer whitespace-nowrap">
           <Plus className="w-4 h-4" /> Thêm đối tác

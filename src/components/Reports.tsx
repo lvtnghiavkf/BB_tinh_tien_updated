@@ -20,7 +20,7 @@ interface ReportsProps {
 }
 
 type RangePreset = 'today' | '7days' | '30days' | 'custom';
-type ReportType = 'revenue' | 'debt' | 'profit';
+type ReportType = 'revenue' | 'debt' | 'salary' | 'profit';
 
 function toDateStr(d: Date) { return d.toISOString().slice(0, 10); }
 function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
@@ -171,7 +171,7 @@ export default function Reports({ invoices, products, onSelectInvoiceForReprint 
 
   // Load salary data
   useEffect(() => {
-    if (reportType !== 'profit') return;
+    if (reportType !== 'salary' && reportType !== 'profit') return;
     setSalaryLoading(true);
     setSalaryError('');
     fetchSalaryEntries()
@@ -230,6 +230,31 @@ export default function Reports({ invoices, products, onSelectInvoiceForReprint 
     const q = salarySearch.toLowerCase();
     return salaryEntries.filter(e => e.fullName.toLowerCase().includes(q) || e.phone.includes(q));
   }, [salaryEntries, salarySearch]);
+
+  const salaryTotalByName = useMemo(() => {
+    const map: Record<string, number> = {};
+    salaryEntries.forEach(e => { map[e.fullName] = (map[e.fullName] || 0) + e.amount; });
+    return map;
+  }, [salaryEntries]);
+
+  const salaryInRangeGrouped = useMemo(() => {
+    const map: Record<string, { fullName: string; lumpCount: number; totalDays: number; totalAmount: number }> = {};
+    salaryInRange.forEach(e => {
+      if (!map[e.fullName]) map[e.fullName] = { fullName: e.fullName, lumpCount: 0, totalDays: 0, totalAmount: 0 };
+      if (e.calcType === 'lump') {
+        map[e.fullName].lumpCount++;
+      } else {
+        const eFrom = new Date(e.dateFrom + 'T00:00:00');
+        const eTo = new Date(e.dateTo + 'T23:59:59');
+        const ovFrom = eFrom > dateFrom ? eFrom : dateFrom;
+        const ovTo = eTo < dateTo ? eTo : dateTo;
+        const days = Math.max(1, Math.round((ovTo.getTime() - ovFrom.getTime()) / 86400000) + 1);
+        map[e.fullName].totalDays += days;
+      }
+      map[e.fullName].totalAmount += e.appliedAmount;
+    });
+    return Object.values(map).sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [salaryInRange, dateFrom, dateTo]);
 
   function openAddSalary() {
     setEditingSalaryId(null);
@@ -312,9 +337,9 @@ export default function Reports({ invoices, products, onSelectInvoiceForReprint 
           <p className="text-slate-500 text-sm mt-1">Doanh thu, công nợ và lợi nhuận theo kỳ.</p>
         </div>
         <div className="flex border border-slate-200 rounded-xl bg-white p-1 shadow-xs w-full sm:w-auto">
-          {([['revenue', <TrendingUp className="w-3.5 h-3.5" />, 'Doanh thu'], ['debt', <ArrowDownToLine className="w-3.5 h-3.5" />, 'Công nợ'], ['profit', <Wallet className="w-3.5 h-3.5" />, 'Lợi nhuận']] as [ReportType, React.ReactNode, string][]).map(([id, icon, label]) => (
+          {([['revenue', <TrendingUp className="w-3.5 h-3.5" />, 'Doanh thu'], ['debt', <ArrowDownToLine className="w-3.5 h-3.5" />, 'Công nợ'], ['salary', <Users className="w-3.5 h-3.5" />, 'Lương'], ['profit', <Wallet className="w-3.5 h-3.5" />, 'Lợi nhuận']] as [ReportType, React.ReactNode, string][]).map(([id, icon, label]) => (
             <button key={id} onClick={() => setReportType(id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer whitespace-nowrap ${reportType === id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer whitespace-nowrap ${reportType === id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
               {icon} {label}
             </button>
           ))}
@@ -550,59 +575,59 @@ export default function Reports({ invoices, products, onSelectInvoiceForReprint 
         </div>
       )}
 
-      {/* ── PROFIT TAB ───────────────────────────────────── */}
-      {reportType === 'profit' && (
+      {/* ── SALARY TAB ───────────────────────────────────── */}
+      {reportType === 'salary' && (
         <div className="space-y-6">
-          {/* P&L Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {[
-              { label: 'DOANH SỐ', value: stats.revenue, color: 'text-blue-600', bg: 'bg-blue-50', icon: <CircleDollarSign className="w-5 h-5" /> },
-              { label: 'GIÁ VỐN', value: stats.cost, color: 'text-slate-600', bg: 'bg-slate-100', icon: <ArrowDownToLine className="w-5 h-5" /> },
-              { label: 'LỢI NHUẬN GỘP', value: stats.profit, color: stats.profit >= 0 ? 'text-emerald-600' : 'text-rose-600', bg: 'bg-emerald-50', icon: <TrendingUp className="w-5 h-5" /> },
-              { label: 'TỔNG LƯƠNG', value: totalSalary, color: 'text-amber-600', bg: 'bg-amber-50', icon: <Users className="w-5 h-5" /> },
-              { label: 'LỢI NHUẬN RÒNG', value: netProfit, color: netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700', bg: netProfit >= 0 ? 'bg-emerald-50' : 'bg-rose-50', icon: <Wallet className="w-5 h-5" /> },
-            ].map(card => (
-              <div key={card.label} className={`bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between`}>
-                <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{card.label}</p><p className={`text-base font-extrabold font-mono mt-1 ${card.color}`}>{formatVND(card.value)}</p></div>
-                <div className={`p-2.5 ${card.bg} ${card.color} rounded-xl`}>{card.icon}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Formula */}
-          <div className="bg-slate-800 rounded-xl p-4 text-sm font-mono text-center">
-            <span className="text-blue-300">{formatVND(stats.revenue)}</span>
-            <span className="text-slate-500"> − </span>
-            <span className="text-slate-300">{formatVND(stats.cost)}</span>
-            <span className="text-slate-500"> − </span>
-            <span className="text-amber-300">{formatVND(totalSalary)}</span>
-            <span className="text-slate-500"> = </span>
-            <span className={`font-extrabold ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatVND(netProfit)}</span>
-            <span className="text-slate-500 text-xs block mt-1">Doanh số − Giá vốn − Lương = Lợi nhuận ròng</span>
-          </div>
-
-          {/* Salary in range breakdown */}
-          {salaryInRange.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-              <h3 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2"><Users className="w-4 h-4 text-amber-600" /> Lương phát sinh trong kỳ</h3>
-              <div className="space-y-2">
-                {salaryInRange.map(e => (
-                  <div key={e.id} className="flex items-center justify-between text-sm p-2 bg-amber-50/50 rounded-lg border border-amber-100">
-                    <div>
-                      <p className="font-semibold text-slate-800">{e.fullName}</p>
-                      <p className="text-xs text-slate-400">{e.dateFrom} → {e.dateTo} · {e.calcType === 'lump' ? 'Đợt' : `${formatVND(e.amount)}/ngày`}</p>
-                    </div>
-                    <p className="font-bold font-mono text-amber-700">{formatVND(e.appliedAmount)}</p>
-                  </div>
-                ))}
-              </div>
+          {/* Salary in range grouped by person */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-slate-200">
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-amber-600" /> Lương phát sinh trong kỳ</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Nhóm theo nhân viên, tổng hợp đợt và ngày công.</p>
             </div>
-          )}
+            {salaryLoading ? (
+              <div className="flex items-center justify-center py-10"><div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /><p className="ml-2 text-slate-500 text-sm">Đang tải...</p></div>
+            ) : salaryInRangeGrouped.length === 0 ? (
+              <div className="p-10 text-center text-slate-400"><Users className="w-8 h-8 mx-auto stroke-1 mb-2 text-slate-300" /><p className="text-sm font-semibold">Không có lương phát sinh trong kỳ</p></div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3">Họ tên</th>
+                      <th className="px-4 py-3 text-center">Đợt</th>
+                      <th className="px-4 py-3 text-center">Ngày công</th>
+                      <th className="px-4 py-3 text-right">Tổng phát sinh</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {salaryInRangeGrouped.map(g => (
+                      <tr key={g.fullName} className="hover:bg-amber-50/30 transition">
+                        <td className="px-4 py-3 font-semibold text-slate-800">{g.fullName}</td>
+                        <td className="px-4 py-3 text-center">
+                          {g.lumpCount > 0
+                            ? <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md text-xs font-bold">{g.lumpCount} đợt</span>
+                            : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {g.totalDays > 0
+                            ? <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md text-xs font-bold">{g.totalDays} ngày</span>
+                            : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold font-mono text-amber-700">{formatVND(g.totalAmount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-amber-50 border-t-2 border-amber-200">
+                      <td className="px-4 py-3 font-extrabold text-slate-800" colSpan={3}>Tổng cộng</td>
+                      <td className="px-4 py-3 text-right font-extrabold font-mono text-amber-800">{formatVND(totalSalary)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
           {/* Salary Management */}
-          {salaryLoading ? (
-            <div className="flex items-center justify-center py-10"><div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /><p className="ml-2 text-slate-500 text-sm">Đang tải lương...</p></div>
-          ) : (
+          {salaryLoading ? null : (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
               <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-blue-600" /> Quản lý bảng lương</h3>
@@ -635,7 +660,17 @@ export default function Reports({ invoices, products, onSelectInvoiceForReprint 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      <tr><th className="px-4 py-3">Họ tên</th><th className="px-4 py-3">Điện thoại</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Cách tính</th><th className="px-4 py-3">Từ ngày</th><th className="px-4 py-3">Đến ngày</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Thao tác</th></tr>
+                      <tr>
+                        <th className="px-4 py-3">Họ tên</th>
+                        <th className="px-4 py-3">Điện thoại</th>
+                        <th className="px-4 py-3 text-right">Số tiền</th>
+                        <th className="px-4 py-3 text-right">Tổng lương</th>
+                        <th className="px-4 py-3">Cách tính</th>
+                        <th className="px-4 py-3">Từ ngày</th>
+                        <th className="px-4 py-3">Đến ngày</th>
+                        <th className="px-4 py-3">Ghi chú</th>
+                        <th className="px-4 py-3 text-right">Thao tác</th>
+                      </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredSalary.map(e => (
@@ -643,6 +678,7 @@ export default function Reports({ invoices, products, onSelectInvoiceForReprint 
                           <td className="px-4 py-3 font-semibold text-slate-800">{e.fullName}</td>
                           <td className="px-4 py-3 font-mono text-xs text-slate-500">{e.phone || '—'}</td>
                           <td className="px-4 py-3 text-right font-mono font-bold text-slate-800">{formatVND(e.amount)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-xs text-amber-700 font-bold">{formatVND(salaryTotalByName[e.fullName] ?? 0)}</td>
                           <td className="px-4 py-3">
                             <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${e.calcType === 'lump' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>
                               {e.calcType === 'lump' ? 'Đợt' : 'Ngày'}
@@ -663,6 +699,77 @@ export default function Reports({ invoices, products, onSelectInvoiceForReprint 
                   </table>
                 </div>
               )}
+            </div>
+          )}
+          {salaryError && <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-700 text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" />{salaryError}</div>}
+        </div>
+      )}
+
+      {/* ── PROFIT TAB ───────────────────────────────────── */}
+      {reportType === 'profit' && (
+        <div className="space-y-6">
+          {/* P&L Summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {[
+              { label: 'DOANH SỐ', value: stats.revenue, color: 'text-blue-600', bg: 'bg-blue-50', icon: <CircleDollarSign className="w-5 h-5" /> },
+              { label: 'GIÁ VỐN', value: stats.cost, color: 'text-slate-600', bg: 'bg-slate-100', icon: <ArrowDownToLine className="w-5 h-5" /> },
+              { label: 'LỢI NHUẬN GỘP', value: stats.profit, color: stats.profit >= 0 ? 'text-emerald-600' : 'text-rose-600', bg: 'bg-emerald-50', icon: <TrendingUp className="w-5 h-5" /> },
+              { label: 'TỔNG LƯƠNG', value: totalSalary, color: 'text-amber-600', bg: 'bg-amber-50', icon: <Users className="w-5 h-5" /> },
+              { label: 'LỢI NHUẬN RÒNG', value: netProfit, color: netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700', bg: netProfit >= 0 ? 'bg-emerald-50' : 'bg-rose-50', icon: <Wallet className="w-5 h-5" /> },
+            ].map(card => (
+              <div key={card.label} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+                <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{card.label}</p><p className={`text-base font-extrabold font-mono mt-1 ${card.color}`}>{formatVND(card.value)}</p></div>
+                <div className={`p-2.5 ${card.bg} ${card.color} rounded-xl`}>{card.icon}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Formula */}
+          <div className="bg-slate-800 rounded-xl p-4 text-sm font-mono text-center">
+            <span className="text-blue-300">{formatVND(stats.revenue)}</span>
+            <span className="text-slate-500"> − </span>
+            <span className="text-slate-300">{formatVND(stats.cost)}</span>
+            <span className="text-slate-500"> − </span>
+            <span className="text-amber-300">{formatVND(totalSalary)}</span>
+            <span className="text-slate-500"> = </span>
+            <span className={`font-extrabold ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatVND(netProfit)}</span>
+            <span className="text-slate-500 text-xs block mt-1">Doanh số − Giá vốn − Lương = Lợi nhuận ròng</span>
+          </div>
+
+          {/* Salary in range grouped */}
+          {salaryLoading ? (
+            <div className="flex items-center justify-center py-10"><div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>
+          ) : salaryInRangeGrouped.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-slate-200">
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-amber-600" /> Lương phát sinh trong kỳ (theo nhân viên)</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3">Họ tên</th>
+                      <th className="px-4 py-3 text-center">Đợt</th>
+                      <th className="px-4 py-3 text-center">Ngày công</th>
+                      <th className="px-4 py-3 text-right">Tổng phát sinh</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {salaryInRangeGrouped.map(g => (
+                      <tr key={g.fullName} className="hover:bg-amber-50/30 transition">
+                        <td className="px-4 py-3 font-semibold text-slate-800">{g.fullName}</td>
+                        <td className="px-4 py-3 text-center">
+                          {g.lumpCount > 0 ? <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md text-xs font-bold">{g.lumpCount} đợt</span> : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {g.totalDays > 0 ? <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md text-xs font-bold">{g.totalDays} ngày</span> : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold font-mono text-amber-700">{formatVND(g.totalAmount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

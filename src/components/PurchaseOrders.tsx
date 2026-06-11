@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Product, Partner, PurchaseOrder, PurchaseOrderItem } from '../types';
-import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, Filter, ChevronsUpDown } from 'lucide-react';
+import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, ChevronsUpDown, Search, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
 
 interface PurchaseOrdersProps {
   products: Product[];
@@ -33,9 +34,48 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   // Create form state
   const [draftType, setDraftType] = useState<'import' | 'export'>('import');
   const [draftPartnerId, setDraftPartnerId] = useState('');
+  const [partnerSearch, setPartnerSearch] = useState('');
+  const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
   const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0, 16));
   const [draftNotes, setDraftNotes] = useState('');
   const [draftItems, setDraftItems] = useState<DraftItem[]>([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }]);
+
+  const partnerDropdownRef = useRef<HTMLDivElement>(null);
+
+  const filteredPartners = useMemo(() => {
+    if (!partnerSearch) return partners;
+    const q = partnerSearch.toLowerCase();
+    return partners.filter(p =>
+      p.fullName.toLowerCase().includes(q) ||
+      p.brands.some(b => b.toLowerCase().includes(q))
+    );
+  }, [partners, partnerSearch]);
+
+  function selectPartner(p: Partner) {
+    setDraftPartnerId(p.id);
+    setPartnerSearch(`${p.fullName}${p.brands.length ? ' — ' + p.brands.join(', ') : ''}`);
+    setShowPartnerDropdown(false);
+  }
+
+  function exportExcel() {
+    const rows: any[] = [];
+    orders.forEach(o => {
+      o.items.forEach(it => {
+        rows.push({
+          'Mã phiếu': o.id, 'Loại': o.type === 'import' ? 'Nhập' : 'Xuất',
+          'Đối tác': o.partnerName, 'Ngày': new Date(o.timestamp).toLocaleDateString('vi-VN'),
+          'Sản phẩm': it.productName, 'SKU': it.sku, 'Số lượng': it.quantity,
+          'Đơn giá': it.unitCost, 'Thành tiền': it.unitCost * it.quantity,
+          'Tổng phiếu': o.totalAmount, 'Đã trả': o.paidAmount,
+          'Còn nợ': o.totalAmount - o.paidAmount, 'Ghi chú': o.notes ?? '',
+        });
+      });
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Xuất nhập hàng');
+    XLSX.writeFile(wb, `xuat_nhap_hang_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
@@ -51,6 +91,8 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   function resetCreate() {
     setDraftType('import');
     setDraftPartnerId('');
+    setPartnerSearch('');
+    setShowPartnerDropdown(false);
     setDraftDate(new Date().toISOString().slice(0, 16));
     setDraftNotes('');
     setDraftItems([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }]);
@@ -132,8 +174,12 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
           <option value="">Tất cả đối tác</option>
           {partners.map(p => <option key={p.id} value={p.id}>{p.fullName}</option>)}
         </select>
+        <button onClick={exportExcel}
+          className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer transition whitespace-nowrap">
+          <Download className="w-4 h-4" /> Xuất Excel
+        </button>
         <button onClick={() => { resetCreate(); setShowCreate(true); }}
-          className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer whitespace-nowrap ml-auto">
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer whitespace-nowrap">
           <Plus className="w-4 h-4" /> Tạo phiếu
         </button>
       </div>
@@ -254,15 +300,40 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                       ))}
                     </div>
                   </div>
-                  <div>
+                  <div className="relative" ref={partnerDropdownRef}>
                     <label className="text-xs font-bold text-slate-600 mb-2 block">
                       Đối tác {draftType === 'import' ? <span className="text-rose-500">*</span> : <span className="text-slate-400">(tùy chọn)</span>}
                     </label>
-                    <select value={draftPartnerId} onChange={e => setDraftPartnerId(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-500 cursor-pointer">
-                      <option value="">— Chọn đối tác —</option>
-                      {partners.map(p => <option key={p.id} value={p.id}>{p.fullName}</option>)}
-                    </select>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <input
+                        value={partnerSearch}
+                        onChange={e => { setPartnerSearch(e.target.value); setDraftPartnerId(''); setShowPartnerDropdown(true); }}
+                        onFocus={() => setShowPartnerDropdown(true)}
+                        placeholder="Tìm tên hoặc thương hiệu..."
+                        className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    {showPartnerDropdown && filteredPartners.length > 0 && (
+                      <div className="absolute z-30 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                        <div className="p-1">
+                          <button type="button" onClick={() => { setDraftPartnerId(''); setPartnerSearch(''); setShowPartnerDropdown(false); }}
+                            className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-slate-50 rounded-lg cursor-pointer">
+                            — Không chọn đối tác —
+                          </button>
+                          {filteredPartners.map(p => (
+                            <button type="button" key={p.id} onClick={() => selectPartner(p)}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded-lg cursor-pointer transition">
+                              <span className="font-semibold text-slate-800">{p.fullName}</span>
+                              {p.brands.length > 0 && <span className="text-slate-400 text-xs ml-1">— {p.brands.join(', ')}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {showPartnerDropdown && (
+                      <div className="fixed inset-0 z-20" onClick={() => setShowPartnerDropdown(false)} />
+                    )}
                   </div>
                 </div>
 
@@ -296,7 +367,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                           <select value={item.productId} onChange={e => setItemProduct(idx, e.target.value)}
                             className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer">
                             <option value="">— Chọn sản phẩm —</option>
-                            {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                            {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku}){p.brand ? ' — ' + p.brand : ''}</option>)}
                           </select>
                         </div>
                         <div className="col-span-2">

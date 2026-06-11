@@ -50,6 +50,12 @@ export default function Checkout({
 
   const formatVND = (value: number) => value.toLocaleString('vi-VN') + ' ₫';
 
+  const isWeightUnit = (unit: string) =>
+    /^(kg|g|gram|gam|lít|lit|liter|litre|ml|l)$/i.test(unit.trim());
+
+  const formatQty = (qty: number) =>
+    Number.isInteger(qty) ? String(qty) : qty.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+
   // ── Barcode scanner ──────────────────────────────────────────────────────────
 
   const showBarcodeMsg = useCallback((text: string, ok: boolean) => {
@@ -123,14 +129,21 @@ export default function Checkout({
   const updateCartQuantity = (productId: string, delta: number) => {
     setCart((prevCart) =>
       prevCart.map((item) => {
-        if (item.product.id === productId) {
-          const newQty = item.quantity + delta;
-          if (newQty <= 0) return null;
-          return { ...item, quantity: newQty };
-        }
-        return item;
+        if (item.product.id !== productId) return item;
+        const step = isWeightUnit(item.product.unit) ? 0.1 : 1;
+        const newQty = Math.round((item.quantity + delta * step) * 1000) / 1000;
+        if (newQty <= 0) return null;
+        return { ...item, quantity: newQty };
       }).filter(Boolean) as CartItem[]
     );
+  };
+
+  const setCartQty = (productId: string, qty: number) => {
+    const rounded = Math.round(qty * 1000) / 1000;
+    if (rounded <= 0) { removeFromCart(productId); return; }
+    setCart(prev => prev.map(item =>
+      item.product.id === productId ? { ...item, quantity: rounded } : item
+    ));
   };
 
   const removeFromCart = (productId: string) => {
@@ -319,8 +332,8 @@ export default function Checkout({
                     {p.category}
                   </span>
                   {inCartQty > 0 && (
-                    <span className="bg-blue-600 text-white font-extrabold text-[10px] w-5 h-5 rounded-full flex items-center justify-center border border-white">
-                      {inCartQty}
+                    <span className="bg-blue-600 text-white font-extrabold text-[10px] min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center border border-white">
+                      {formatQty(inCartQty)}
                     </span>
                   )}
                 </div>
@@ -406,7 +419,17 @@ export default function Checkout({
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="w-6 text-center font-bold text-xs font-mono">{item.quantity}</span>
+                      <input
+                        type="number"
+                        step={isWeightUnit(item.product.unit) ? 'any' : '1'}
+                        min={isWeightUnit(item.product.unit) ? '0.001' : '1'}
+                        value={item.quantity}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value.replace(',', '.'));
+                          if (!isNaN(v) && v > 0) setCartQty(item.product.id, v);
+                        }}
+                        className={`text-center font-bold text-xs font-mono bg-transparent border-0 focus:outline-none focus:ring-0 p-0 ${isWeightUnit(item.product.unit) ? 'w-16' : 'w-7'}`}
+                      />
                       <button
                         type="button"
                         onClick={() => updateCartQuantity(item.product.id, 1)}

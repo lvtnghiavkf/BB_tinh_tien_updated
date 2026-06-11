@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Customer, Invoice } from '../types';
-import { Plus, Pencil, Trash2, Search, X, Eye, User, Phone, Calendar, Mail, ShoppingBag } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, User, Calendar, ShoppingBag, Download, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
 
 interface CustomersProps {
   customers: Customer[];
@@ -27,6 +28,41 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const xlsxRef = useRef<HTMLInputElement>(null);
+
+  function exportExcel() {
+    const ws = XLSX.utils.json_to_sheet(customers.map(c => ({
+      'Họ tên': c.fullName, 'Điện thoại': c.phone,
+      'Ngày sinh': c.birthDate ?? '', 'Email': c.email ?? '', 'Ghi chú': c.notes ?? '',
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Khách hàng');
+    XLSX.writeFile(wb, `khach_hang_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  async function handleImportExcel(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      const wb = XLSX.read(ev.target?.result, { type: 'binary' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws) as any[];
+      for (const r of rows) {
+        if (!r['Họ tên']) continue;
+        const c: Customer = {
+          id: `cust_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          fullName: String(r['Họ tên']), phone: String(r['Điện thoại'] ?? ''),
+          birthDate: r['Ngày sinh'] ? String(r['Ngày sinh']) : undefined,
+          email: r['Email'] ? String(r['Email']) : undefined,
+          notes: r['Ghi chú'] ? String(r['Ghi chú']) : undefined,
+          createdAt: new Date().toISOString(),
+        };
+        try { await onAdd(c); } catch { /* skip dup */ }
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
+  }
 
   // History date range
   const today = new Date();
@@ -109,6 +145,15 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
             className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
         </div>
+        <input ref={xlsxRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportExcel} />
+        <button onClick={() => xlsxRef.current?.click()}
+          className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer transition whitespace-nowrap">
+          <Upload className="w-4 h-4" /> Nhập Excel
+        </button>
+        <button onClick={exportExcel}
+          className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer transition whitespace-nowrap">
+          <Download className="w-4 h-4" /> Xuất Excel
+        </button>
         <button onClick={openAdd}
           className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer whitespace-nowrap">
           <Plus className="w-4 h-4" /> Thêm khách hàng
