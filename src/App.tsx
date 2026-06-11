@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Product, StoreConfig, Invoice } from './types';
+import { Product, StoreConfig, Invoice, StaffUser } from './types';
 import { INITIAL_PRODUCTS, INITIAL_STORE_CONFIG } from './data';
 import {
   fetchProducts, insertProduct, updateProduct as dbUpdateProduct,
@@ -12,18 +12,23 @@ import {
   fetchInvoices, insertInvoice,
   fetchStoreConfig, saveStoreConfig,
 } from './lib/db';
+import { getCurrentUser, logout } from './lib/auth';
 import Checkout from './components/Checkout';
 import Inventory from './components/Inventory';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
+import Login from './components/Login';
 import InvoicePrint from './components/InvoicePrint';
 import {
   ShoppingCart, Box, BarChart3, Settings as SettingsIcon,
-  Clock, Store, Printer
+  Clock, Store, Printer, LogOut, User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<StaffUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(INITIAL_STORE_CONFIG);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -33,10 +38,18 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  // Load data from Supabase on mount
+  // Check existing session on mount
   useEffect(() => {
+    const user = getCurrentUser();
+    setCurrentUser(user);
+    setAuthChecked(true);
+  }, []);
+
+  // Load data from Supabase when logged in
+  useEffect(() => {
+    if (!currentUser) return;
+
     async function loadData() {
-      // Check env vars are actually set (Vite replaces these at build time)
       const url = import.meta.env.VITE_SUPABASE_URL;
       const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
       if (!url || !key || url === 'https://placeholder.supabase.co') {
@@ -52,7 +65,6 @@ export default function App() {
           fetchInvoices(),
         ]);
 
-        // Seed initial products on first run
         if (dbProducts.length === 0) {
           for (const p of INITIAL_PRODUCTS) {
             await insertProduct(p);
@@ -62,7 +74,6 @@ export default function App() {
           setProducts(dbProducts);
         }
 
-        // Seed initial store config on first run
         if (dbConfig) {
           setStoreConfig(dbConfig);
         } else {
@@ -78,13 +89,31 @@ export default function App() {
       }
     }
     loadData();
-  }, []);
+  }, [currentUser]);
 
   // Real-time clock
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // When user logs in, reset to checkout tab
+  const handleLogin = (user: StaffUser) => {
+    setCurrentUser(user);
+    setIsLoading(true);
+    setLoadError('');
+    // Reset to checkout; if sales employee, only checkout/reports available
+    setActiveTab('checkout');
+  };
+
+  const handleLogout = () => {
+    logout();
+    setCurrentUser(null);
+    setProducts([]);
+    setInvoices([]);
+    setIsLoading(true);
+    setLoadError('');
+  };
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -112,18 +141,18 @@ export default function App() {
   };
 
   const handleAddInvoice = async (newInvoice: Invoice) => {
-    // Deduct stock for each sold item
+    // Deduct stock — allow negative (no Math.max clamp)
     for (const item of newInvoice.items) {
       const product = products.find(p => p.id === item.product.id);
       if (product) {
-        await dbUpdateProduct({ ...product, stock: Math.max(0, product.stock - item.quantity) });
+        await dbUpdateProduct({ ...product, stock: product.stock - item.quantity });
       }
     }
     await insertInvoice(newInvoice);
 
     setProducts(prev => prev.map(p => {
       const soldItem = newInvoice.items.find(it => it.product.id === p.id);
-      if (soldItem) return { ...p, stock: Math.max(0, p.stock - soldItem.quantity) };
+      if (soldItem) return { ...p, stock: p.stock - soldItem.quantity };
       return p;
     }));
     setInvoices(prev => [...prev, newInvoice]);
@@ -135,6 +164,15 @@ export default function App() {
   };
 
   const lowStockCount = products.filter(p => p.stock <= p.minStock).length;
+  const isManager = currentUser?.role === 'manager';
+
+  // ── Auth check ──────────────────────────────────────────────────────────────
+
+  if (!authChecked) return null;
+
+  if (!currentUser) {
+    return <Login onLogin={handleLogin} />;
+  }
 
   // ── Loading / Error screens ─────────────────────────────────────────────────
 
@@ -198,21 +236,25 @@ export default function App() {
             >
               <ShoppingCart className="w-3.5 h-3.5" /> Bán hàng
             </button>
-            <button
-              onClick={() => setActiveTab('inventory')}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 relative cursor-pointer ${
-                activeTab === 'inventory'
-                  ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
-              }`}
-            >
-              <Box className="w-3.5 h-3.5" /> Kho hàng
-              {lowStockCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-rose-500 border-2 border-white text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                  {lowStockCount}
-                </span>
-              )}
-            </button>
+
+            {isManager && (
+              <button
+                onClick={() => setActiveTab('inventory')}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 relative cursor-pointer ${
+                  activeTab === 'inventory'
+                    ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
+                }`}
+              >
+                <Box className="w-3.5 h-3.5" /> Kho hàng
+                {lowStockCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-rose-500 border-2 border-white text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                    {lowStockCount}
+                  </span>
+                )}
+              </button>
+            )}
+
             <button
               onClick={() => setActiveTab('reports')}
               className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
@@ -223,22 +265,44 @@ export default function App() {
             >
               <BarChart3 className="w-3.5 h-3.5" /> Báo cáo
             </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
-                activeTab === 'settings'
-                  ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
-              }`}
-            >
-              <SettingsIcon className="w-3.5 h-3.5" /> Thiết lập
-            </button>
+
+            {isManager && (
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                  activeTab === 'settings'
+                    ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
+                }`}
+              >
+                <SettingsIcon className="w-3.5 h-3.5" /> Thiết lập
+              </button>
+            )}
           </nav>
 
-          {/* Clock */}
-          <div className="hidden md:flex items-center gap-2 text-xs font-mono font-medium text-slate-500 bg-slate-50 border border-slate-200 p-2 rounded-xl">
-            <Clock className="w-4 h-4 text-blue-500" />
-            <span>{currentTime.toLocaleDateString('vi-VN')} {currentTime.toLocaleTimeString('vi-VN')}</span>
+          {/* Right: Clock + User info */}
+          <div className="hidden md:flex items-center gap-3">
+            <div className="flex items-center gap-2 text-xs font-mono font-medium text-slate-500 bg-slate-50 border border-slate-200 p-2 rounded-xl">
+              <Clock className="w-4 h-4 text-blue-500" />
+              <span>{currentTime.toLocaleDateString('vi-VN')} {currentTime.toLocaleTimeString('vi-VN')}</span>
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold ${isManager ? 'bg-blue-600' : 'bg-emerald-600'}`}>
+                <User className="w-3.5 h-3.5" />
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-bold text-slate-700 leading-none">{currentUser.displayName}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{isManager ? 'Quản lý' : 'Nhân viên'}</p>
+              </div>
+              <button
+                onClick={handleLogout}
+                title="Đăng xuất"
+                className="ml-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -262,7 +326,7 @@ export default function App() {
                 onSelectInvoiceForReprint={setSelectedReprintInvoice}
               />
             )}
-            {activeTab === 'inventory' && (
+            {activeTab === 'inventory' && isManager && (
               <Inventory
                 products={products}
                 onAddProduct={handleAddProduct}
@@ -278,7 +342,7 @@ export default function App() {
                 onSelectInvoiceForReprint={setSelectedReprintInvoice}
               />
             )}
-            {activeTab === 'settings' && (
+            {activeTab === 'settings' && isManager && (
               <Settings
                 config={storeConfig}
                 onSaveConfig={handleSaveConfig}

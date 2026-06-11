@@ -52,3 +52,13 @@ export interface SalesReport {
   profit: number; // Lợi nhuận
   transactionCount: number;
 }
+
+export type UserRole = 'manager' | 'sales';
+
+export interface StaffUser {
+  id: string;
+  username: string;
+  displayName: string;
+  role: UserRole;
+  pin: string;
+}

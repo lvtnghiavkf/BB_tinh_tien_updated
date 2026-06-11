@@ -49,7 +49,7 @@ export default function Inventory({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'out' | 'low'>('all');
-  const [showHidden, setShowHidden] = useState(false);
+  // Hidden products are always visible in inventory; "hidden" only affects Sales screen
 
   // Chọn nhiều
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -104,9 +104,7 @@ export default function Inventory({
       matchesStock = p.stock > 0 && p.stock <= p.minStock;
     }
 
-    const matchesHidden = showHidden ? true : !p.hidden;
-
-    return matchesSearch && matchesCategory && matchesStock && matchesHidden;
+    return matchesSearch && matchesCategory && matchesStock;
   });
 
   const selectedProducts = products.filter((p) => selectedIds.has(p.id));
@@ -513,18 +511,12 @@ export default function Inventory({
               ))}
             </select>
 
-            <button
-              onClick={() => setShowHidden((v) => !v)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                showHidden
-                  ? 'bg-slate-800 text-white border-slate-800'
-                  : 'bg-white text-slate-500 border-slate-200 hover:text-slate-800'
-              }`}
-              title="Hiện/ẩn các sản phẩm đã ẩn"
-            >
-              {showHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-              SP đã ẩn ({hiddenCount})
-            </button>
+            {hiddenCount > 0 && (
+              <span className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-amber-200 bg-amber-50 text-amber-700">
+                <EyeOff className="w-3.5 h-3.5" />
+                {hiddenCount} SP đang ẩn khỏi bán hàng
+              </span>
+            )}
           </div>
 
           {/* Lọc theo tồn kho */}
@@ -662,8 +654,8 @@ export default function Inventory({
                         <div className="font-bold text-slate-800 truncate flex items-center gap-1.5">
                           {p.name}
                           {p.hidden && (
-                            <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 font-bold rounded border border-slate-300 bg-slate-100 text-slate-500">
-                              <EyeOff className="w-3 h-3" /> Đã ẩn
+                            <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 font-bold rounded border border-amber-300 bg-amber-50 text-amber-700">
+                              <EyeOff className="w-3 h-3" /> Ẩn khỏi bán hàng
                             </span>
                           )}
                           {!p.hidden && p.stock <= p.minStock && (
@@ -712,7 +704,7 @@ export default function Inventory({
                         <button
                           onClick={() => onUpdateProduct({ ...p, hidden: !p.hidden })}
                           className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg transition inline-flex items-center cursor-pointer"
-                          title={p.hidden ? 'Hiện lại sản phẩm' : 'Ẩn sản phẩm'}
+                          title={p.hidden ? 'Hiện lại trên màn Bán hàng' : 'Ẩn khỏi màn Bán hàng'}
                         >
                           {p.hidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                         </button>
