@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Invoice, Product, PurchaseOrder, SalaryEntry, PaymentLog } from '../types';
+import { Invoice, Product, PurchaseOrder, SalaryEntry, PaymentLog, Partner } from '../types';
 import {
   TrendingUp, Calendar,
   CircleDollarSign, Search, ShoppingBag, Percent, Receipt,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import {
   fetchPurchaseOrders, updatePurchaseOrder,
+  fetchPartners,
   fetchSalaryEntries, insertSalaryEntry, updateSalaryEntry, deleteSalaryEntry,
   insertPaymentLog, fetchPaymentLogs,
 } from '../lib/db';
@@ -67,6 +68,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
 
   // Debt tab state
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [partners, setPartners] = useState<Partner[]>([]);
   const [debtLoading, setDebtLoading] = useState(false);
   const [debtError, setDebtError] = useState('');
   const [expandedPartnerId, setExpandedPartnerId] = useState<string | null>(null);
@@ -74,6 +76,8 @@ export default function Reports({ invoices, products, isManager = false, onSelec
   const [payAmount, setPayAmount] = useState('');
   const [payFull, setPayFull] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [payDebtCash, setPayDebtCash] = useState(false);
+  const [payDebtConfirmed, setPayDebtConfirmed] = useState(false);
 
   // Profit / Salary tab state
   const [salaryEntries, setSalaryEntries] = useState<SalaryEntry[]>([]);
@@ -182,13 +186,13 @@ export default function Reports({ invoices, products, isManager = false, onSelec
   const revPts = genPoints('revenue'), profPts = genPoints('profit');
   const presetLabel: Record<RangePreset, string> = { today: 'Hôm nay', '7days': '7 ngày', '30days': '30 ngày', custom: 'Tùy chọn' };
 
-  // Load debt data
+  // Load debt data + partners
   useEffect(() => {
     if (reportType !== 'debt') return;
     setDebtLoading(true);
     setDebtError('');
-    fetchPurchaseOrders()
-      .then(data => setPurchaseOrders(data))
+    Promise.all([fetchPurchaseOrders(), fetchPartners()])
+      .then(([orders, pts]) => { setPurchaseOrders(orders); setPartners(pts); })
       .catch(() => setDebtError('Không thể tải dữ liệu công nợ.'))
       .finally(() => setDebtLoading(false));
   }, [reportType]);
@@ -229,6 +233,8 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     setPayingOrder(o);
     setPayAmount(String(o.totalAmount - o.paidAmount));
     setPayFull(false);
+    setPayDebtCash(false);
+    setPayDebtConfirmed(false);
   }
 
   async function confirmPay() {
@@ -238,10 +244,25 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     if (amount <= 0) return;
     setPaying(true);
     try {
-      const updated = { ...payingOrder, paidAmount: payingOrder.paidAmount + amount };
+      const newPaid = payingOrder.paidAmount + amount;
+      const newRemaining = payingOrder.totalAmount - newPaid;
+      const updated = { ...payingOrder, paidAmount: newPaid };
       await updatePurchaseOrder(updated);
       setPurchaseOrders(prev => prev.map(o => o.id === payingOrder.id ? updated : o));
+      const log: PaymentLog = {
+        id: `PL${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        type: 'debt',
+        referenceId: payingOrder.id,
+        referenceName: payingOrder.partnerName || 'Không rõ',
+        amount,
+        paymentMethod: payDebtCash ? 'cash' : 'bank',
+        remaining: newRemaining,
+        notes: payingOrder.id,
+      };
+      try { await insertPaymentLog(log); setPaymentLogs(prev => [log, ...prev]); } catch (_) {}
       setPayingOrder(null);
+      setPayDebtConfirmed(false);
     } finally {
       setPaying(false);
     }
@@ -1097,31 +1118,107 @@ export default function Reports({ invoices, products, isManager = false, onSelec
 
       {/* Pay Modal (Debt tab) */}
       <AnimatePresence>
-        {payingOrder && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-sm p-6">
-              <h3 className="font-bold text-zinc-100 mb-1">Thanh toán phiếu nhập</h3>
-              <p className="text-xs text-zinc-400 font-mono mb-4">{payingOrder.id} · {payingOrder.partnerName}</p>
-              <div className="space-y-3 mb-5">
-                <div className="flex justify-between text-sm"><span className="text-zinc-300">Tổng phiếu:</span><span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-zinc-300">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-zinc-300">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
-                <div className="border-t border-zinc-700 pt-3 space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={payFull} onChange={e => { setPayFull(e.target.checked); if (e.target.checked) setPayAmount(String(payingOrder.totalAmount - payingOrder.paidAmount)); }} className="w-4 h-4" />
-                    <span className="text-sm font-medium text-zinc-300">Thanh toán toàn bộ</span>
-                  </label>
-                  {!payFull && (<div><label className="text-xs font-bold text-zinc-300 mb-1 block">Số tiền</label><input type="number" min={0} value={payAmount} onChange={e => setPayAmount(e.target.value)} className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none bg-zinc-800 text-zinc-100 focus:border-blue-500" /></div>)}
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-zinc-700 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
-                <button onClick={confirmPay} disabled={paying} className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">{paying ? 'Đang lưu...' : 'Xác nhận'}</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
+        {payingOrder && (() => {
+          const partner = partners.find(p => p.id === payingOrder.partnerId);
+          const remaining = payingOrder.totalAmount - payingOrder.paidAmount;
+          const payAmt = payFull ? remaining : Math.min(Number(payAmount) || 0, remaining);
+          const hasBank = !payDebtCash && partner?.bankName && partner?.bankAccount;
+          return (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-lg">
+                {payDebtConfirmed ? (
+                  <div className="p-8 text-center">
+                    <div className="w-16 h-16 bg-emerald-900/40 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <Receipt className="w-9 h-9 text-emerald-400" />
+                    </div>
+                    <h3 className="font-bold text-emerald-400 text-lg mb-1">Xác nhận thanh toán công nợ</h3>
+                    <p className="text-sm text-zinc-400 mb-2">{payingOrder.partnerName} — <span className="font-mono font-bold text-zinc-200">{formatVND(payAmt)}</span></p>
+                    <p className="text-xs text-zinc-500 mb-6">Hình thức: {payDebtCash ? 'Tiền mặt' : 'Chuyển khoản'}</p>
+                    <div className="flex gap-3">
+                      <button onClick={() => setPayDebtConfirmed(false)} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Quay lại</button>
+                      <button onClick={confirmPay} disabled={paying} className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:!opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                        {paying ? 'Đang lưu...' : 'Xác nhận & Lưu'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between p-5 border-b border-zinc-700">
+                      <div>
+                        <h3 className="font-bold text-zinc-100">Thanh toán công nợ</h3>
+                        <p className="text-xs text-zinc-400 font-mono mt-0.5">{payingOrder.id} · {payingOrder.partnerName}</p>
+                      </div>
+                      <button onClick={() => setPayingOrder(null)} className="text-zinc-400 hover:text-zinc-200 cursor-pointer"><X className="w-5 h-5" /></button>
+                    </div>
+                    <div className="p-5 space-y-4">
+                      <div className="bg-zinc-800 rounded-xl p-4 space-y-2 text-sm">
+                        <div className="flex justify-between"><span className="text-zinc-400">Tổng phiếu:</span><span className="font-mono font-bold text-zinc-100">{formatVND(payingOrder.totalAmount)}</span></div>
+                        <div className="flex justify-between"><span className="text-zinc-400">Đã trả:</span><span className="font-mono text-emerald-400">{formatVND(payingOrder.paidAmount)}</span></div>
+                        <div className="flex justify-between border-t border-zinc-700 pt-2"><span className="text-zinc-300 font-bold">Còn nợ:</span><span className="font-mono font-bold text-rose-400 text-base">{formatVND(remaining)}</span></div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={payFull} onChange={e => { setPayFull(e.target.checked); if (e.target.checked) setPayAmount(String(remaining)); }} className="w-4 h-4 accent-emerald-500" />
+                          <span className="text-sm font-medium text-zinc-300">Thanh toán toàn bộ còn lại</span>
+                        </label>
+                        {!payFull && (
+                          <div>
+                            <label className="text-xs font-bold text-zinc-400 mb-1 block">Số tiền thanh toán</label>
+                            <input type="number" min={0} max={remaining} value={payAmount} onChange={e => setPayAmount(e.target.value)}
+                              className="w-full px-3 py-2.5 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none bg-zinc-800 text-zinc-100 focus:border-emerald-500" />
+                          </div>
+                        )}
+                        {payAmt > 0 && <p className="text-xs text-zinc-500">Còn lại sau thanh toán: <span className={`font-mono font-bold ${remaining - payAmt > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{formatVND(Math.max(0, remaining - payAmt))}</span></p>}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-zinc-400 uppercase mb-2">Hình thức thanh toán</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={() => setPayDebtCash(true)}
+                            className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold cursor-pointer transition ${payDebtCash ? 'border-amber-500 bg-amber-900/30 text-amber-300' : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                            <Banknote className="w-4 h-4" /> Tiền mặt
+                          </button>
+                          <button type="button" onClick={() => setPayDebtCash(false)}
+                            className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold cursor-pointer transition ${!payDebtCash ? 'border-blue-500 bg-blue-900/30 text-blue-300' : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                            <Building2 className="w-4 h-4" /> Chuyển khoản
+                          </button>
+                        </div>
+                      </div>
+                      {hasBank && payAmt > 0 && (
+                        <div className="bg-zinc-800 rounded-xl border border-zinc-700 p-4 text-center">
+                          <p className="text-[10px] font-bold text-zinc-500 uppercase mb-3">QR CHUYỂN KHOẢN CÔNG NỢ</p>
+                          <img
+                            src={buildSalaryQR(partner!.bankName!, partner!.bankAccount!, payAmt, partner!.bankAccountName ?? partner!.name, `Tra no ${payingOrder.id}`)}
+                            alt="QR chuyển khoản"
+                            className="w-44 h-44 mx-auto rounded-xl object-contain"
+                          />
+                          <p className="text-sm font-mono font-bold text-zinc-200 mt-2">{partner!.bankAccount}</p>
+                          <p className="text-xs text-zinc-400">{SAL_BANKS.find(b => b.id === partner!.bankName)?.name ?? partner!.bankName} · {partner!.bankAccountName ?? partner!.name}</p>
+                          <p className="text-xs text-emerald-400 font-mono font-bold mt-1">{formatVND(payAmt)}</p>
+                        </div>
+                      )}
+                      {!payDebtCash && partner && !partner.bankAccount && (
+                        <p className="text-xs text-zinc-500 italic text-center">Đối tác chưa có thông tin tài khoản ngân hàng</p>
+                      )}
+                    </div>
+                    <div className="flex gap-3 p-5 border-t border-zinc-700">
+                      <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                      {payDebtCash ? (
+                        <button onClick={confirmPay} disabled={paying || payAmt <= 0} className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:!opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                          {paying ? 'Đang lưu...' : 'Xác nhận tiền mặt'}
+                        </button>
+                      ) : (
+                        <button onClick={() => setPayDebtConfirmed(true)} disabled={payAmt <= 0} className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:!opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                          Đã chuyển khoản
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* Salary Form Modal */}
@@ -1129,7 +1226,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {showSalaryForm && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-xl">
               <div className="flex items-center justify-between p-5 border-b border-zinc-700">
                 <h3 className="font-bold text-zinc-100">{editingSalaryId ? 'Sửa lương' : 'Thêm lương'}</h3>
                 <button onClick={() => setShowSalaryForm(false)} className="text-zinc-500 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
@@ -1231,7 +1328,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {payingSalary && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-sm p-6">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md p-6">
               {salaryPayConfirmed ? (
                 <div className="text-center py-4">
                   <div className="w-16 h-16 bg-emerald-900/40 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -1305,7 +1402,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {deleteSalaryConfirm && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md p-6 text-center">
               <div className="w-12 h-12 bg-rose-900/40 rounded-full flex items-center justify-center mx-auto mb-3"><Trash2 className="w-6 h-6 text-rose-600" /></div>
               <h3 className="font-bold text-zinc-100 mb-2">Xóa bản ghi lương?</h3>
               <p className="text-sm text-zinc-400 mb-5">Hành động này không thể hoàn tác.</p>

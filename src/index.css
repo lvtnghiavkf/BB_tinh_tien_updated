@@ -72,6 +72,8 @@ body {
 .bg-slate-50    { background-color: #27272a !important; }
 .bg-slate-100   { background-color: #1c1c1f !important; }
 .bg-slate-150   { background-color: #1c1c1f !important; }
+.bg-slate-200   { background-color: #18181b !important; }
+.bg-slate-300   { background-color: #27272a !important; }
 .bg-stone-50    { background-color: #27272a !important; }
 .bg-stone-100   { background-color: #1c1c1f !important; }
 .bg-stone-850   { background-color: #18181b !important; }
@@ -118,6 +120,10 @@ body {
 .bg-white\/90, .bg-white\/20, .bg-white\/30, .bg-white\/40             { background-color: rgba(24,24,27,0.85) !important; }
 
 /* Hover backgrounds */
+/* disabled state overrides */
+button:disabled { background-color: #3f3f46 !important; color: #71717a !important; }
+button:disabled:hover { background-color: #3f3f46 !important; }
+
 .hover\:bg-slate-50:hover   { background-color: #27272a !important; }
 .hover\:bg-white:hover      { background-color: #18181b !important; }
 .hover\:bg-blue-50:hover    { background-color: #0f1f3d !important; }

@@ -606,7 +606,7 @@ export default function Checkout({
                   className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
                     paymentMethod === method
                       ? 'border-blue-500 bg-blue-900/30 text-blue-300 font-bold shadow-xs'
-                      : 'border-slate-200 hover:border-slate-350 bg-white text-slate-600'
+                      : 'border-zinc-700 hover:border-zinc-500 bg-zinc-800 text-zinc-300'
                   }`}
                 >
                   {m.icon}
@@ -714,7 +714,7 @@ export default function Checkout({
           <button
             type="submit"
             disabled={cart.length === 0}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-lg text-xs sm:text-sm shadow-md transition-all duration-150 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-lg text-xs sm:text-sm shadow-md transition-all duration-150 disabled:!bg-zinc-700 disabled:!text-zinc-500 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
           >
             <Printer className="w-4.5 h-4.5" /> Thanh Toán & In Hóa Đơn
           </button>
