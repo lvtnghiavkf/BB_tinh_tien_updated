@@ -5,10 +5,34 @@ import { Product, Invoice, StoreConfig, PaymentMethod, Customer, Partner, Purcha
 
 export async function updateInvoice(inv: Invoice): Promise<void> {
   const { error } = await supabase.from('invoices').update({
+    customer_name: inv.customerName ?? null,
+    customer_phone: inv.customerPhone ?? null,
+    payment_method: inv.paymentMethod,
+    discount_percent: inv.discountPercent,
+    discount_amount: inv.discountAmount,
+    total_amount: inv.totalAmount,
+    final_amount: inv.finalAmount,
     notes: inv.notes ?? null,
     status: inv.status ?? 'completed',
   }).eq('id', inv.id);
   if (error) throw error;
+
+  // Replace invoice items
+  const { error: delErr } = await supabase.from('invoice_items').delete().eq('invoice_id', inv.id);
+  if (delErr) throw delErr;
+
+  if (inv.items.length > 0) {
+    const { error: insErr } = await supabase.from('invoice_items').insert(
+      inv.items.map(it => ({
+        invoice_id: inv.id,
+        product_id: it.product.id,
+        product_snapshot: it.product,
+        quantity: it.quantity,
+        unit_price: it.product.sellingPrice,
+      })),
+    );
+    if (insErr) throw insErr;
+  }
 }
 
 // ── Products ──────────────────────────────────────────────────────────────────

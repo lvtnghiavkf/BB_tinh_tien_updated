@@ -223,9 +223,9 @@ export default function App() {
   // ── Main UI ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 font-sans flex flex-col justify-between antialiased">
+    <div className="min-h-screen bg-zinc-950 text-amber-400 font-sans flex flex-col justify-between antialiased">
       {/* Header Navigation Bar */}
-      <header className="bg-white border-b border-slate-200 shadow-xs select-none sticky top-0 z-40 transition-all duration-200">
+      <header className="bg-zinc-900 border-b border-zinc-700 shadow-xs select-none sticky top-0 z-40 transition-all duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
           {/* Logo Brand */}
           <div className="flex items-center gap-3">
@@ -234,11 +234,11 @@ export default function App() {
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h1 className="text-lg font-extrabold tracking-tight leading-none text-slate-800">VietPOS</h1>
+                <h1 className="text-lg font-extrabold tracking-tight leading-none text-amber-400">VietPOS</h1>
                 <span className="text-[9px] bg-blue-600 h-max text-white font-extrabold px-1.5 py-0.5 rounded-sm shrink-0 tracking-wider">CHUYÊN NGHIỆP</span>
               </div>
-              <p className="text-[11px] font-mono text-slate-500 font-medium tracking-tight mt-1 flex items-center gap-1">
-                <Store className="w-3.5 h-3.5 shrink-0 text-slate-400" /> {storeConfig.name}
+              <p className="text-[11px] font-mono text-zinc-400 font-medium tracking-tight mt-1 flex items-center gap-1">
+                <Store className="w-3.5 h-3.5 shrink-0 text-zinc-500" /> {storeConfig.name}
               </p>
             </div>
           </div>
@@ -249,8 +249,8 @@ export default function App() {
               onClick={() => setActiveTab('checkout')}
               className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
                 activeTab === 'checkout'
-                  ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
+                  ? 'text-amber-400 border-b-2 border-amber-400 rounded-none'
+                  : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded-lg'
               }`}
             >
               <ShoppingCart className="w-3.5 h-3.5" /> Bán hàng
@@ -261,13 +261,13 @@ export default function App() {
                 onClick={() => setActiveTab('inventory')}
                 className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 relative cursor-pointer ${
                   activeTab === 'inventory'
-                    ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
-                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
+                    ? 'text-amber-400 border-b-2 border-amber-400 rounded-none'
+                    : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded-lg'
                 }`}
               >
                 <Box className="w-3.5 h-3.5" /> Kho hàng
                 {lowStockCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-rose-500 border-2 border-white text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 bg-rose-500 border-2 border-zinc-900 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
                     {lowStockCount}
                   </span>
                 )}
@@ -279,8 +279,8 @@ export default function App() {
                 onClick={() => setActiveTab('data')}
                 className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
                   activeTab === 'data'
-                    ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
-                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
+                    ? 'text-amber-400 border-b-2 border-amber-400 rounded-none'
+                    : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded-lg'
                 }`}
               >
                 <Database className="w-3.5 h-3.5" /> Dữ liệu
@@ -291,8 +291,8 @@ export default function App() {
               onClick={() => setActiveTab('reports')}
               className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
                 activeTab === 'reports'
-                  ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
+                  ? 'text-amber-400 border-b-2 border-amber-400 rounded-none'
+                  : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded-lg'
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5" /> Báo cáo
@@ -303,8 +303,8 @@ export default function App() {
                 onClick={() => setActiveTab('settings')}
                 className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer ${
                   activeTab === 'settings'
-                    ? 'text-blue-600 border-b-2 border-blue-600 rounded-none'
-                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-lg'
+                    ? 'text-amber-400 border-b-2 border-amber-400 rounded-none'
+                    : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded-lg'
                 }`}
               >
                 <SettingsIcon className="w-3.5 h-3.5" /> Thiết lập
@@ -314,23 +314,23 @@ export default function App() {
 
           {/* Right: Clock + User info */}
           <div className="hidden md:flex items-center gap-3">
-            <div className="flex items-center gap-2 text-xs font-mono font-medium text-slate-500 bg-slate-50 border border-slate-200 p-2 rounded-xl">
-              <Clock className="w-4 h-4 text-blue-500" />
+            <div className="flex items-center gap-2 text-xs font-mono font-medium text-amber-400/70 bg-zinc-800 border border-zinc-700 p-2 rounded-xl">
+              <Clock className="w-4 h-4 text-amber-500" />
               <span>{currentTime.toLocaleDateString('vi-VN')} {currentTime.toLocaleTimeString('vi-VN')}</span>
             </div>
 
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
+            <div className="flex items-center gap-2 bg-zinc-800 border border-zinc-700 px-3 py-2 rounded-xl">
               <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold ${isManager ? 'bg-blue-600' : 'bg-emerald-600'}`}>
                 <User className="w-3.5 h-3.5" />
               </div>
               <div className="text-left">
-                <p className="text-xs font-bold text-slate-700 leading-none">{currentUser.displayName}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">{isManager ? 'Quản lý' : 'Nhân viên'}</p>
+                <p className="text-xs font-bold text-amber-400 leading-none">{currentUser.displayName}</p>
+                <p className="text-[10px] text-zinc-500 mt-0.5">{isManager ? 'Quản lý' : 'Nhân viên'}</p>
               </div>
               <button
                 onClick={handleLogout}
                 title="Đăng xuất"
-                className="ml-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                className="ml-1 text-zinc-500 hover:text-rose-400 transition cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -395,7 +395,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-4 select-none">
+      <footer className="bg-zinc-900 border-t border-zinc-700 py-4 select-none">
         <div className="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 font-medium">
           <p>© 2026 VietPOS POS System. Hỗ trợ in hóa đơn K80 và liên thông mã quét VietQR thuận tiện.</p>
         </div>

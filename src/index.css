@@ -59,3 +59,76 @@ html { font-size: 14px; }
   background: #94a3b8;
 }
 
+/* ═══════════════════════════════════════════════════════
+   DARK THEME — Nền đen chữ vàng (dùng ngoài trời)
+═══════════════════════════════════════════════════════ */
+
+body {
+  background-color: #09090b;
+}
+
+/* ── Backgrounds ──────────────────────────────────── */
+.bg-white       { background-color: #18181b !important; }
+.bg-slate-50    { background-color: #27272a !important; }
+.bg-slate-100   { background-color: #1c1c1f !important; }
+.bg-stone-50    { background-color: #27272a !important; }
+.bg-stone-100   { background-color: #1c1c1f !important; }
+.bg-stone-850   { background-color: #18181b !important; }
+
+/* Hover backgrounds */
+.hover\:bg-slate-50:hover   { background-color: #27272a !important; }
+.hover\:bg-white:hover      { background-color: #18181b !important; }
+
+/* ── Text ──────────────────────────────────────────── */
+.text-slate-900  { color: #fbbf24 !important; }
+.text-slate-800  { color: #fbbf24 !important; }
+.text-slate-700  { color: #fbbf24 !important; }
+.text-slate-600  { color: #fcd34d !important; }
+.text-slate-500  { color: #fde68a !important; }
+.text-slate-450  { color: rgba(253,230,138,0.7) !important; }
+.text-slate-400  { color: rgba(253,230,138,0.5) !important; }
+.text-slate-300  { color: rgba(253,230,138,0.35) !important; }
+.text-stone-400  { color: rgba(253,230,138,0.5) !important; }
+.text-stone-850  { color: #fbbf24 !important; }
+
+/* ── Borders ───────────────────────────────────────── */
+.border-slate-200 { border-color: #52525b !important; }
+.border-slate-100 { border-color: #3f3f46 !important; }
+.border-stone-200 { border-color: #52525b !important; }
+.border-stone-100 { border-color: #3f3f46 !important; }
+
+/* ── Dividers ──────────────────────────────────────── */
+.divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #3f3f46 !important; }
+.divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #52525b !important; }
+
+/* ── Form inputs (global dark) ─────────────────────── */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+textarea,
+select {
+  background-color: #27272a !important;
+  color: #fbbf24 !important;
+  border-color: #52525b !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(253, 230, 138, 0.35) !important;
+}
+
+option {
+  background-color: #27272a;
+  color: #fbbf24;
+}
+
+/* ── Scrollbar dark ────────────────────────────────── */
+::-webkit-scrollbar-thumb { background: #52525b !important; }
+::-webkit-scrollbar-thumb:hover { background: #71717a !important; }
+
+/* ── Print area: restore white for receipt preview ─── */
+#print-area,
+#print-area * {
+  background-color: revert !important;
+  color: revert !important;
+  border-color: revert !important;
+}
+

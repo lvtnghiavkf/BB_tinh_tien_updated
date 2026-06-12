@@ -155,6 +155,7 @@ export default function Data({ invoices, products, onUpdateProductsStock, onUpda
               products={products}
               onUpdateInvoice={onUpdateInvoice}
               onPrintInvoice={onPrintInvoice}
+              onUpdateProductsStock={onUpdateProductsStock}
             />
           )}
           {subTab === 'invoices' && (!onUpdateInvoice || !onPrintInvoice) && (
