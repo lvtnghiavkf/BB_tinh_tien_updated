@@ -85,11 +85,13 @@ export default function Reports({ invoices, products, isManager = false, onSelec
   const [salarySearch, setSalarySearch] = useState('');
   const [deleteSalaryConfirm, setDeleteSalaryConfirm] = useState<string | null>(null);
   const [salarySaving, setSalarySaving] = useState(false);
+  const [salarySaveError, setSalarySaveError] = useState('');
   const [payingSalary, setPayingSalary] = useState<SalaryEntry | null>(null);
   const [salaryPayAmount, setSalaryPayAmount] = useState('');
   const [salaryPayFull, setSalaryPayFull] = useState(false);
   const [salaryPayCash, setSalaryPayCash] = useState(false);
   const [salaryPaySaving, setSalaryPaySaving] = useState(false);
+  const [salaryPayError, setSalaryPayError] = useState('');
   const [salaryPayConfirmed, setSalaryPayConfirmed] = useState(false);
   const [paymentLogs, setPaymentLogs] = useState<PaymentLog[]>([]);
   const xlsxInputRef = useRef<HTMLInputElement>(null);
@@ -304,6 +306,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     const amount = salaryPayFull ? remaining : Math.min(Number(salaryPayAmount) || 0, remaining);
     if (amount <= 0) return;
     setSalaryPaySaving(true);
+    setSalaryPayError('');
     try {
       const newPaid = (payingSalary.paidAmount ?? 0) + amount;
       const newRemaining = payingSalary.amount - newPaid;
@@ -324,6 +327,8 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       try { await insertPaymentLog(log); setPaymentLogs(prev => [log, ...prev]); } catch (_) {}
       setPayingSalary(null);
       setSalaryPayConfirmed(false);
+    } catch (err: any) {
+      setSalaryPayError(err?.message ?? 'Lỗi khi lưu thanh toán lương. Vui lòng thử lại.');
     } finally {
       setSalaryPaySaving(false);
     }
@@ -331,6 +336,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
   async function handleSaveSalary() {
     if (!salaryForm.fullName.trim() || !salaryForm.amount || !salaryForm.dateFrom || !salaryForm.dateTo) return;
     setSalarySaving(true);
+    setSalarySaveError('');
     try {
       if (editingSalaryId) {
         const existing = salaryEntries.find(e => e.id === editingSalaryId)!;
@@ -343,6 +349,8 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         setSalaryEntries(prev => [newEntry, ...prev]);
       }
       setShowSalaryForm(false);
+    } catch (err: any) {
+      setSalarySaveError(err?.message ?? 'Lỗi khi lưu bảng lương. Vui lòng thử lại.');
     } finally {
       setSalarySaving(false);
     }
@@ -1009,8 +1017,11 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                     : <p>💡 <strong>Ngày:</strong> {formatVND(Number(salaryForm.amount) || 0)} × số ngày giao thoa với kỳ báo cáo.</p>}
                 </div>
               </div>
+              {salarySaveError && (
+                <div className="mx-5 mb-3 px-3 py-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium">{salarySaveError}</div>
+              )}
               <div className="flex gap-3 p-5 border-t border-slate-200">
-                <button onClick={() => setShowSalaryForm(false)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={() => { setShowSalaryForm(false); setSalarySaveError(''); }} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
                 <button onClick={handleSaveSalary} disabled={salarySaving}
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
                   {salarySaving ? 'Đang lưu...' : 'Lưu'}
@@ -1073,8 +1084,11 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                       <p className="text-xs text-slate-500">{SAL_BANKS.find(b => b.id === payingSalary.bankName)?.name} · {payingSalary.bankAccountName}</p>
                     </div>
                   )}
+                  {salaryPayError && (
+                    <div className="mb-3 px-3 py-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium">{salaryPayError}</div>
+                  )}
                   <div className="flex gap-3">
-                    <button onClick={() => setPayingSalary(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                    <button onClick={() => { setPayingSalary(null); setSalaryPayError(''); }} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
                     {salaryPayCash ? (
                       <button onClick={confirmSalaryPay} disabled={salaryPaySaving} className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
                         {salaryPaySaving ? 'Đang lưu...' : 'Xác nhận tiền mặt'}
