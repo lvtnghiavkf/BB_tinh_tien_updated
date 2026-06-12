@@ -38,6 +38,7 @@ export interface Invoice {
   customerPhone?: string;
   notes?: string;
   status?: 'completed' | 'cancelled';
+  paymentStatus?: 'paid' | 'unpaid';
 }
 
 export interface StoreConfig {
@@ -68,6 +69,7 @@ export interface StaffUser {
 
 export interface Customer {
   id: string;
+  code?: string;
   fullName: string;
   birthDate?: string; // YYYY-MM-DD
   phone: string;
@@ -79,6 +81,7 @@ export interface Customer {
 
 export interface Partner {
   id: string;
+  code?: string;
   fullName: string;
   brands: string[];
   phones: string[];
@@ -139,5 +142,14 @@ export interface SalaryEntry {
   paidAmount: number; // Đã thanh toán
   isPaidCash?: boolean; // Trả tiền mặt
   notes?: string;
+  createdAt: string;
+}
+
+export interface Expense {
+  id: string;
+  content: string;   // Nội dung chi phí
+  amount: number;
+  notes?: string;
+  date: string;      // YYYY-MM-DD
   createdAt: string;
 }

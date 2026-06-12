@@ -18,11 +18,11 @@ interface PartnersProps {
 const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
 
 type Form = {
-  fullName: string; brands: string[]; phones: string[]; emails: string[];
+  code: string; fullName: string; brands: string[]; phones: string[]; emails: string[];
   address: string; bankName: string; bankAccount: string; bankAccountName: string; notes: string;
 };
 const EMPTY: Form = {
-  fullName: '', brands: [''], phones: [''], emails: [''],
+  code: '', fullName: '', brands: [''], phones: [''], emails: [''],
   address: '', bankName: '', bankAccount: '', bankAccountName: '', notes: '',
 };
 
@@ -139,6 +139,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
   function openEdit(p: Partner) {
     setEditingId(p.id);
     setForm({
+      code: p.code ?? '',
       fullName: p.fullName,
       brands: p.brands.length ? [...p.brands] : [''],
       phones: p.phones.length ? [...p.phones] : [''],
@@ -167,6 +168,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
     setSaveError('');
     try {
       const base: Partial<Partner> = {
+        code: form.code.trim() || undefined,
         fullName: form.fullName.trim(),
         brands: cleanArr(form.brands), phones: cleanArr(form.phones), emails: cleanArr(form.emails),
         address: form.address.trim() || undefined,
@@ -288,6 +290,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
                 <tr>
+                  <th className="px-3 py-3 w-10 text-center text-zinc-400 text-xs font-bold uppercase">#</th>
                   <th className="px-4 py-3">Họ tên</th>
                   <th className="px-4 py-3">Thương hiệu</th>
                   <th className="px-4 py-3">Điện thoại</th>
@@ -297,7 +300,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map(p => {
+                {filtered.map((p, idx) => {
                   const debt = partnerDebt[p.id] ?? { total: 0, paid: 0 };
                   const remaining = debt.total - debt.paid;
                   const isExpanded = expandedId === p.id;
@@ -307,7 +310,11 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                         className={`transition cursor-pointer ${isExpanded ? 'bg-amber-950/20' : 'hover:bg-zinc-800/40'}`}
                         onClick={() => setExpandedId(isExpanded ? null : p.id)}
                       >
-                        <td className="px-4 py-3 font-semibold text-slate-800">{p.fullName}</td>
+                        <td className="px-3 py-3 text-center text-zinc-500 text-xs">{idx + 1}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {p.fullName}
+                          {p.code && <span className="text-[10px] font-mono text-zinc-500 ml-1">{p.code}</span>}
+                        </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
                             {p.brands.map(b => <span key={b} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] font-bold rounded-md">{b}</span>)}
@@ -326,7 +333,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={6} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
+                          <td colSpan={7} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
                             <div className="space-y-3">
                               {/* Info grid — always show phone/email/address */}
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
@@ -431,6 +438,11 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                 <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
               <div className="p-5 space-y-4 overflow-y-auto max-h-[65vh]">
+                <div>
+                  <label className="text-xs font-bold text-zinc-300 mb-1 block">Mã đối tác</label>
+                  <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
+                    className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none bg-zinc-800 text-amber-400" placeholder="VD: DT001" />
+                </div>
                 <div>
                   <label className="text-xs font-bold text-slate-600 mb-1 block">Họ tên <span className="text-rose-500">*</span></label>
                   <input value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))}

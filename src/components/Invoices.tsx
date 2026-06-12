@@ -55,13 +55,30 @@ export default function Invoices({
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
 
+  const [timeFilter, setTimeFilter] = useState<'1' | '3' | '7' | '30' | 'custom'>('30');
+  const [customDateFrom, setCustomDateFrom] = useState('');
+  const [customDateTo, setCustomDateTo] = useState('');
+
   const sorted = useMemo(
     () => [...invoices].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
     [invoices],
   );
 
   const filtered = useMemo(() => {
+    const now = new Date();
+    now.setHours(23, 59, 59, 999);
+    let dateFrom: Date | null = null;
+    let dateTo: Date | null = now;
+    if (timeFilter === '1') { dateFrom = new Date(now); dateFrom.setHours(0, 0, 0, 0); }
+    else if (timeFilter === '3') { dateFrom = new Date(now); dateFrom.setDate(dateFrom.getDate() - 2); dateFrom.setHours(0, 0, 0, 0); }
+    else if (timeFilter === '7') { dateFrom = new Date(now); dateFrom.setDate(dateFrom.getDate() - 6); dateFrom.setHours(0, 0, 0, 0); }
+    else if (timeFilter === '30') { dateFrom = new Date(now); dateFrom.setDate(dateFrom.getDate() - 29); dateFrom.setHours(0, 0, 0, 0); }
+    else if (timeFilter === 'custom' && customDateFrom) {
+      dateFrom = new Date(customDateFrom + 'T00:00:00');
+      dateTo = customDateTo ? new Date(customDateTo + 'T23:59:59') : now;
+    }
     let list = sorted;
+    if (dateFrom) list = list.filter(i => { const t = new Date(i.timestamp).getTime(); return t >= dateFrom!.getTime() && t <= dateTo!.getTime(); });
     if (pmFilter) list = list.filter(i => i.paymentMethod === pmFilter);
     if (statusFilter) list = list.filter(i => (i.status ?? 'completed') === statusFilter);
     if (search) {
@@ -73,7 +90,7 @@ export default function Invoices({
       );
     }
     return list;
-  }, [sorted, search, pmFilter, statusFilter]);
+  }, [sorted, search, pmFilter, statusFilter, timeFilter, customDateFrom, customDateTo]);
 
   const isCancelled = (inv: Invoice) => (inv.status ?? 'completed') === 'cancelled';
 
@@ -178,6 +195,24 @@ export default function Invoices({
 
   return (
     <div className="space-y-4">
+      {/* Time filter */}
+      <div className="flex flex-wrap items-center gap-2">
+        {(['1', '3', '7', '30', 'custom'] as const).map(t => (
+          <button key={t} onClick={() => setTimeFilter(t)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${timeFilter === t ? 'bg-blue-600 text-white' : 'bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-100'}`}>
+            {t === '1' ? 'Hôm nay' : t === 'custom' ? 'Tùy chọn' : `${t} ngày`}
+          </button>
+        ))}
+        {timeFilter === 'custom' && (
+          <div className="flex items-center gap-2">
+            <input type="date" value={customDateFrom} onChange={e => setCustomDateFrom(e.target.value)}
+              className="px-2 py-1 bg-zinc-800 border border-zinc-700 text-amber-400 rounded-lg text-xs focus:outline-none" />
+            <span className="text-zinc-500 text-xs">→</span>
+            <input type="date" value={customDateTo} onChange={e => setCustomDateTo(e.target.value)}
+              className="px-2 py-1 bg-zinc-800 border border-zinc-700 text-amber-400 rounded-lg text-xs focus:outline-none" />
+          </div>
+        )}
+      </div>
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -213,12 +248,14 @@ export default function Invoices({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-zinc-800 border-b border-zinc-700 text-zinc-400 text-xs font-bold uppercase tracking-wider">
+                  <th className="px-3 py-3 w-10 text-center">#</th>
                   <th className="px-4 py-3 font-mono">Mã HD</th>
                   <th className="px-4 py-3">Thời gian</th>
                   <th className="px-4 py-3">Khách hàng</th>
                   <th className="px-4 py-3 text-right">Tổng tiền</th>
                   <th className="px-4 py-3 text-center">Hình thức</th>
                   <th className="px-4 py-3 text-center">Trạng thái</th>
+                  <th className="px-4 py-3 text-center">T.Toán</th>
                   <th className="px-4 py-3 w-8"></th>
                 </tr>
               </thead>
@@ -237,6 +274,7 @@ export default function Invoices({
                           ${isOpen ? 'bg-amber-950/20' : 'hover:bg-zinc-800/60'}
                           ${cancelled ? 'opacity-50' : ''}`}
                       >
+                        <td className="px-3 py-3 text-center text-zinc-500 text-xs font-mono">{filtered.indexOf(inv) + 1}</td>
                         <td className="px-4 py-3 font-mono font-bold text-amber-400">{inv.id}</td>
                         <td className="px-4 py-3 text-zinc-400 text-xs font-mono whitespace-nowrap">
                           {new Date(inv.timestamp).toLocaleDateString('vi-VN')}{' '}
@@ -264,6 +302,20 @@ export default function Invoices({
                             ? <span className="px-2 py-0.5 bg-rose-900/40 text-rose-300 border border-rose-700 rounded-md text-[10px] font-bold">Đã hủy</span>
                             : <span className="px-2 py-0.5 bg-emerald-900/40 text-emerald-300 border border-emerald-700 rounded-md text-[10px] font-bold">Hoàn thành</span>}
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          {!cancelled && (
+                            <button
+                              onClick={e => { e.stopPropagation(); onUpdateInvoice({ ...inv, paymentStatus: (inv.paymentStatus ?? 'paid') === 'paid' ? 'unpaid' : 'paid' }); }}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border cursor-pointer transition ${
+                                (inv.paymentStatus ?? 'paid') === 'paid'
+                                  ? 'bg-emerald-900/40 text-emerald-300 border-emerald-700'
+                                  : 'bg-amber-900/40 text-amber-300 border-amber-700'
+                              }`}>
+                              {(inv.paymentStatus ?? 'paid') === 'paid' ? 'Đã TT' : 'Chưa TT'}
+                            </button>
+                          )}
+                          {cancelled && <span className="text-zinc-600 text-xs">—</span>}
+                        </td>
                         <td className="px-4 py-3">
                           <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${isOpen ? 'rotate-180 text-amber-400' : ''}`} />
                         </td>
@@ -271,7 +323,7 @@ export default function Invoices({
 
                       {isOpen && (
                         <tr className="bg-amber-950/10 border-b border-zinc-800">
-                          <td colSpan={7} className="px-5 py-4">
+                          <td colSpan={9} className="px-5 py-4">
                             <div className="space-y-4" onClick={e => e.stopPropagation()}>
 
                               {/* Items table */}

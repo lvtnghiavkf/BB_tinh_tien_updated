@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Product, Invoice, StoreConfig, PaymentMethod, Customer, Partner, PurchaseOrder, PurchaseOrderItem, SalaryEntry, PaymentLog } from '../types';
+import { Product, Invoice, StoreConfig, PaymentMethod, Customer, Partner, PurchaseOrder, PurchaseOrderItem, SalaryEntry, PaymentLog, Expense } from '../types';
 
 // ── Invoices (update) ─────────────────────────────────────────────────────────
 
@@ -14,6 +14,7 @@ export async function updateInvoice(inv: Invoice): Promise<void> {
     final_amount: inv.finalAmount,
     notes: inv.notes ?? null,
     status: inv.status ?? 'completed',
+    payment_status: inv.paymentStatus ?? 'paid',
   }).eq('id', inv.id);
   if (error) throw error;
 
@@ -150,6 +151,7 @@ export async function fetchInvoices(): Promise<Invoice[]> {
     customerPhone: r.customer_phone ?? undefined,
     notes: r.notes ?? undefined,
     status: (r.status ?? 'completed') as 'completed' | 'cancelled',
+    paymentStatus: (r.payment_status ?? 'paid') as 'paid' | 'unpaid',
   }));
 }
 
@@ -166,6 +168,7 @@ export async function insertInvoice(invoice: Invoice): Promise<void> {
     customer_phone: invoice.customerPhone ?? null,
     notes: invoice.notes ?? null,
     status: invoice.status ?? 'completed',
+    payment_status: invoice.paymentStatus ?? 'paid',
   });
   if (invErr) throw invErr;
 
@@ -191,6 +194,7 @@ export async function fetchCustomers(): Promise<Customer[]> {
   if (error) throw error;
   return data.map(r => ({
     id: r.id,
+    code: r.code ?? undefined,
     fullName: r.full_name,
     birthDate: r.birth_date ?? undefined,
     phone: r.phone ?? '',
@@ -209,6 +213,7 @@ export async function insertCustomer(c: Customer): Promise<void> {
     notes: c.notes ?? null, created_at: c.createdAt,
   };
   if (c.address !== undefined) payload.address = c.address || null;
+  if (c.code !== undefined) payload.code = c.code || null;
   const { error } = await supabase.from('customers').insert(payload);
   if (error) throw error;
 }
@@ -220,6 +225,7 @@ export async function updateCustomer(c: Customer): Promise<void> {
     notes: c.notes ?? null, updated_at: new Date().toISOString(),
   };
   if (c.address !== undefined) payload.address = c.address || null;
+  if (c.code !== undefined) payload.code = c.code || null;
   const { error } = await supabase.from('customers').update(payload).eq('id', c.id);
   if (error) throw error;
 }
@@ -239,6 +245,7 @@ export async function fetchPartners(): Promise<Partner[]> {
   if (error) throw error;
   return data.map(r => ({
     id: r.id,
+    code: r.code ?? undefined,
     fullName: r.full_name,
     brands: r.brands ?? [],
     phones: r.phones ?? [],
@@ -259,6 +266,7 @@ export async function insertPartner(p: Partner): Promise<void> {
     notes: p.notes ?? null, created_at: p.createdAt,
   };
   if (p.address !== undefined) payload.address = p.address || null;
+  if (p.code !== undefined) payload.code = p.code || null;
   if (p.bankName !== undefined) payload.bank_name = p.bankName || null;
   if (p.bankAccount !== undefined) payload.bank_account = p.bankAccount || null;
   if (p.bankAccountName !== undefined) payload.bank_account_name = p.bankAccountName || null;
@@ -273,6 +281,7 @@ export async function updatePartner(p: Partner): Promise<void> {
     updated_at: new Date().toISOString(),
   };
   if (p.address !== undefined) payload.address = p.address || null;
+  if (p.code !== undefined) payload.code = p.code || null;
   if (p.bankName !== undefined) payload.bank_name = p.bankName || null;
   if (p.bankAccount !== undefined) payload.bank_account = p.bankAccount || null;
   if (p.bankAccountName !== undefined) payload.bank_account_name = p.bankAccountName || null;
@@ -454,4 +463,44 @@ export async function fetchPaymentLogs(): Promise<PaymentLog[]> {
     remaining: r.remaining,
     notes: r.notes ?? undefined,
   }));
+}
+
+// ── Expenses ──────────────────────────────────────────────────────────────────
+
+export async function fetchExpenses(): Promise<Expense[]> {
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('*')
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return data.map(r => ({
+    id: r.id,
+    content: r.content,
+    amount: r.amount,
+    notes: r.notes ?? undefined,
+    date: r.date,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function insertExpense(e: Expense): Promise<void> {
+  const { error } = await supabase.from('expenses').insert({
+    id: e.id, content: e.content, amount: e.amount,
+    notes: e.notes ?? null, date: e.date, created_at: e.createdAt,
+  });
+  if (error) throw error;
+}
+
+export async function updateExpense(e: Expense): Promise<void> {
+  const { error } = await supabase.from('expenses').update({
+    content: e.content, amount: e.amount,
+    notes: e.notes ?? null, date: e.date,
+    updated_at: new Date().toISOString(),
+  }).eq('id', e.id);
+  if (error) throw error;
+}
+
+export async function deleteExpense(id: string): Promise<void> {
+  const { error } = await supabase.from('expenses').delete().eq('id', id);
+  if (error) throw error;
 }

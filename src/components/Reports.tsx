@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Invoice, Product, PurchaseOrder, SalaryEntry, PaymentLog, Partner } from '../types';
+import { Invoice, Product, PurchaseOrder, SalaryEntry, PaymentLog, Partner, Expense } from '../types';
 import {
   TrendingUp, Calendar,
   CircleDollarSign, Search, ShoppingBag, Percent, Receipt,
@@ -11,6 +11,7 @@ import {
   fetchPartners,
   fetchSalaryEntries, insertSalaryEntry, updateSalaryEntry, deleteSalaryEntry,
   insertPaymentLog, fetchPaymentLogs,
+  fetchExpenses, insertExpense, updateExpense, deleteExpense,
 } from '../lib/db';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -42,6 +43,14 @@ function calcSalaryInRange(entry: SalaryEntry, from: Date, to: Date): number {
   const ovTo   = eTo   < toDay   ? eTo   : toDay;
   const days = Math.round((ovTo.getTime() - ovFrom.getTime()) / 86400000) + 1;
   return entry.amount * Math.max(1, days);
+}
+
+function getTotalSalary(e: SalaryEntry): number {
+  if (e.calcType === 'lump') return e.amount;
+  const eFrom = new Date(e.dateFrom + 'T00:00:00');
+  const eTo   = new Date(e.dateTo   + 'T00:00:00');
+  const days = Math.max(1, Math.round((eTo.getTime() - eFrom.getTime()) / 86400000) + 1);
+  return e.amount * days;
 }
 
 const EMPTY_SALARY = { fullName: '', phone: '', amount: '', calcType: 'lump' as 'lump' | 'daily', dateFrom: '', dateTo: '', bankName: '', bankAccount: '', bankAccountName: '', notes: '' };
@@ -100,6 +109,15 @@ export default function Reports({ invoices, products, isManager = false, onSelec
   const [paymentLogs, setPaymentLogs] = useState<PaymentLog[]>([]);
   const [showDebtPaidHistory, setShowDebtPaidHistory] = useState(false);
   const [showSalaryPaidHistory, setShowSalaryPaidHistory] = useState(false);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expensesLoading, setExpensesLoading] = useState(false);
+  const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [expenseForm, setExpenseForm] = useState({ content: '', amount: '', date: '', notes: '' });
+  const [expenseSaving, setExpenseSaving] = useState(false);
+  const [expenseSaveError, setExpenseSaveError] = useState('');
+  const [deleteExpenseConfirm, setDeleteExpenseConfirm] = useState<string | null>(null);
+  const [tax, setTax] = useState(0);
   const xlsxInputRef = useRef<HTMLInputElement>(null);
 
   // Date range
@@ -121,7 +139,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
   }, [rangePreset, customFrom, customTo]);
 
   const rangeInvoices = useMemo(() =>
-    invoices.filter(inv => { const t = new Date(inv.timestamp).getTime(); return t >= dateFrom.getTime() && t <= dateTo.getTime(); }),
+    invoices.filter(inv => { const t = new Date(inv.timestamp).getTime(); return t >= dateFrom.getTime() && t <= dateTo.getTime() && (inv.status ?? 'completed') !== 'cancelled'; }),
     [invoices, dateFrom, dateTo]);
 
   // Revenue stats
@@ -214,6 +232,12 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     fetchPaymentLogs().then(data => setPaymentLogs(data)).catch(() => {});
   }, [reportType]);
 
+  useEffect(() => {
+    if (reportType !== 'profit') return;
+    setExpensesLoading(true);
+    fetchExpenses().then(data => setExpenses(data)).catch(() => {}).finally(() => setExpensesLoading(false));
+  }, [reportType]);
+
   // Debt tab: group by partner
   const debtByPartner = useMemo(() => {
     const map: Record<string, { partnerName: string; total: number; paid: number; orders: PurchaseOrder[] }> = {};
@@ -274,7 +298,8 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     [salaryEntries, dateFrom, dateTo]);
 
   const totalSalary = useMemo(() => salaryInRange.reduce((s, e) => s + e.appliedAmount, 0), [salaryInRange]);
-  const netProfit = stats.profit - totalSalary;
+  const totalExpenses = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
+  const netProfit = stats.profit - totalSalary - totalExpenses - tax;
 
   const filteredSalary = useMemo(() => {
     if (!salarySearch) return salaryEntries;
@@ -282,10 +307,10 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     return salaryEntries.filter(e => e.fullName.toLowerCase().includes(q) || e.phone.includes(q));
   }, [salaryEntries, salarySearch]);
 
-  const salaryTotalOwed = useMemo(() => salaryEntries.reduce((s, e) => s + e.amount, 0), [salaryEntries]);
+  const salaryTotalOwed = useMemo(() => salaryEntries.reduce((s, e) => s + getTotalSalary(e), 0), [salaryEntries]);
   const salaryTotalPaid = useMemo(() => salaryEntries.reduce((s, e) => s + (e.paidAmount ?? 0), 0), [salaryEntries]);
   const salaryTotalRemaining = salaryTotalOwed - salaryTotalPaid;
-  const salaryUnpaidCount = useMemo(() => salaryEntries.filter(e => (e.amount - (e.paidAmount ?? 0)) > 0).length, [salaryEntries]);
+  const salaryUnpaidCount = useMemo(() => salaryEntries.filter(e => (getTotalSalary(e) - (e.paidAmount ?? 0)) > 0).length, [salaryEntries]);
 
   const salaryTotalByName = useMemo(() => {
     const map: Record<string, number> = {};
@@ -325,19 +350,19 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     setShowSalaryForm(true);
   }
   function openPaySalary(e: SalaryEntry) {
-    const remaining = e.amount - (e.paidAmount ?? 0);
+    const remaining = getTotalSalary(e) - (e.paidAmount ?? 0);
     setPayingSalary(e); setSalaryPayAmount(String(remaining)); setSalaryPayFull(false); setSalaryPayCash(false); setSalaryPayConfirmed(false);
   }
   async function confirmSalaryPay() {
     if (!payingSalary) return;
-    const remaining = payingSalary.amount - (payingSalary.paidAmount ?? 0);
+    const remaining = getTotalSalary(payingSalary) - (payingSalary.paidAmount ?? 0);
     const amount = salaryPayFull ? remaining : Math.min(Number(salaryPayAmount) || 0, remaining);
     if (amount <= 0) return;
     setSalaryPaySaving(true);
     setSalaryPayError('');
     try {
       const newPaid = (payingSalary.paidAmount ?? 0) + amount;
-      const newRemaining = payingSalary.amount - newPaid;
+      const newRemaining = getTotalSalary(payingSalary) - newPaid;
       const updated: SalaryEntry = { ...payingSalary, paidAmount: newPaid, isPaidCash: salaryPayCash };
       await updateSalaryEntry(updated);
       setSalaryEntries(prev => prev.map(e => e.id === payingSalary.id ? updated : e));
@@ -387,6 +412,46 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     await deleteSalaryEntry(id);
     setSalaryEntries(prev => prev.filter(e => e.id !== id));
     setDeleteSalaryConfirm(null);
+  }
+
+  function openAddExpense() {
+    setEditingExpenseId(null);
+    setExpenseForm({ content: '', amount: '', date: toDateStr(new Date()), notes: '' });
+    setShowExpenseForm(true);
+    setExpenseSaveError('');
+  }
+  function openEditExpense(e: Expense) {
+    setEditingExpenseId(e.id);
+    setExpenseForm({ content: e.content, amount: String(e.amount), date: e.date, notes: e.notes ?? '' });
+    setShowExpenseForm(true);
+    setExpenseSaveError('');
+  }
+  async function handleSaveExpense() {
+    if (!expenseForm.content.trim() || !expenseForm.amount || !expenseForm.date) return;
+    setExpenseSaving(true);
+    setExpenseSaveError('');
+    try {
+      if (editingExpenseId) {
+        const existing = expenses.find(e => e.id === editingExpenseId)!;
+        const updated: Expense = { ...existing, content: expenseForm.content.trim(), amount: Number(expenseForm.amount), date: expenseForm.date, notes: expenseForm.notes.trim() || undefined };
+        await updateExpense(updated);
+        setExpenses(prev => prev.map(e => e.id === editingExpenseId ? updated : e));
+      } else {
+        const newExp: Expense = { id: `exp_${Date.now()}`, content: expenseForm.content.trim(), amount: Number(expenseForm.amount), date: expenseForm.date, notes: expenseForm.notes.trim() || undefined, createdAt: new Date().toISOString() };
+        await insertExpense(newExp);
+        setExpenses(prev => [newExp, ...prev]);
+      }
+      setShowExpenseForm(false);
+    } catch (err: any) {
+      setExpenseSaveError(err?.message ?? 'Lỗi khi lưu chi phí. Vui lòng thử lại.');
+    } finally {
+      setExpenseSaving(false);
+    }
+  }
+  async function handleDeleteExpense(id: string) {
+    await deleteExpense(id);
+    setExpenses(prev => prev.filter(e => e.id !== id));
+    setDeleteExpenseConfirm(null);
   }
 
   function exportSalaryExcel() {
@@ -838,7 +903,8 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                     <tbody className="divide-y divide-zinc-700">
                       {filteredSalary.map(e => {
                         const paid = e.paidAmount ?? 0;
-                        const remaining = e.amount - paid;
+                        const total = getTotalSalary(e);
+                        const remaining = total - paid;
                         return (
                           <tr key={e.id} className="hover:bg-zinc-800/20 transition">
                             <td className="px-4 py-3">
@@ -846,7 +912,10 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                               {e.bankAccount && <p className="text-[10px] text-zinc-500 font-mono">{SAL_BANKS.find(b => b.id === e.bankName)?.name ?? e.bankName} · {e.bankAccount}</p>}
                             </td>
                             <td className="px-4 py-3 font-mono text-xs text-zinc-400">{e.phone || '—'}</td>
-                            <td className="px-4 py-3 text-right font-mono font-bold text-zinc-100">{formatVND(e.amount)}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-zinc-100">
+                              <p>{formatVND(total)}</p>
+                              {e.calcType === 'daily' && <p className="text-[10px] text-zinc-500">{formatVND(e.amount)}/ngày</p>}
+                            </td>
                             <td className="px-4 py-3">
                               <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${e.calcType === 'lump' ? 'bg-blue-900/30 text-blue-300' : 'bg-purple-900/30 text-purple-300'}`}>
                                 {e.calcType === 'lump' ? 'Đợt' : 'Ngày'}
@@ -924,69 +993,109 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       {reportType === 'profit' && (
         <div className="space-y-6">
           {/* P&L Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
-              { label: 'DOANH SỐ', value: stats.revenue, color: 'text-blue-600', bg: 'bg-blue-50', icon: <CircleDollarSign className="w-5 h-5" /> },
-              { label: 'GIÁ VỐN', value: stats.cost, color: 'text-zinc-300', bg: 'bg-zinc-700', icon: <ArrowDownToLine className="w-5 h-5" /> },
-              { label: 'LỢI NHUẬN GỘP', value: stats.profit, color: stats.profit >= 0 ? 'text-emerald-600' : 'text-rose-600', bg: 'bg-emerald-50', icon: <TrendingUp className="w-5 h-5" /> },
-              { label: 'TỔNG LƯƠNG', value: totalSalary, color: 'text-amber-600', bg: 'bg-amber-50', icon: <Users className="w-5 h-5" /> },
-              { label: 'LỢI NHUẬN RÒNG', value: netProfit, color: netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700', bg: netProfit >= 0 ? 'bg-emerald-50' : 'bg-rose-50', icon: <Wallet className="w-5 h-5" /> },
+              { label: 'DOANH THU', value: stats.revenue, color: 'text-blue-400', bg: 'bg-blue-900/30', icon: <CircleDollarSign className="w-5 h-5" />, sub: `${stats.transactions} đơn` },
+              { label: 'GIÁ VỐN NHẬP HÀNG', value: stats.cost, color: 'text-zinc-300', bg: 'bg-zinc-700', icon: <ArrowDownToLine className="w-5 h-5" />, sub: 'Chi phí nhập hàng' },
+              { label: 'LỢI NHUẬN GỘP', value: stats.profit, color: stats.profit >= 0 ? 'text-emerald-400' : 'text-rose-400', bg: stats.profit >= 0 ? 'bg-emerald-900/30' : 'bg-rose-900/30', icon: <TrendingUp className="w-5 h-5" />, sub: 'Doanh thu − Giá vốn' },
+              { label: 'TỔNG LƯƠNG', value: totalSalary, color: 'text-amber-400', bg: 'bg-amber-900/30', icon: <Users className="w-5 h-5" />, sub: 'Trong kỳ' },
+              { label: 'CHI PHÍ PHÁT SINH', value: totalExpenses, color: 'text-rose-400', bg: 'bg-rose-900/30', icon: <Receipt className="w-5 h-5" />, sub: `${expenses.length} khoản` },
+              { label: 'LỢI NHUẬN RÒNG', value: netProfit, color: netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400', bg: netProfit >= 0 ? 'bg-emerald-900/30' : 'bg-rose-900/30', icon: <Wallet className="w-5 h-5" />, sub: 'Sau thuế & chi phí' },
             ].map(card => (
               <div key={card.label} className="bg-zinc-800/50 p-4 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
-                <div><p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{card.label}</p><p className={`text-base font-extrabold font-mono mt-1 ${card.color}`}>{formatVND(card.value)}</p></div>
+                <div>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{card.label}</p>
+                  <p className={`text-base font-extrabold font-mono mt-1 ${card.color}`}>{formatVND(card.value)}</p>
+                  <p className="text-[10px] text-zinc-500 mt-0.5">{card.sub}</p>
+                </div>
                 <div className={`p-2.5 ${card.bg} ${card.color} rounded-xl`}>{card.icon}</div>
               </div>
             ))}
           </div>
 
           {/* Formula */}
-          <div className="bg-slate-800 rounded-xl p-4 text-sm font-mono text-center">
-            <span className="text-blue-300">{formatVND(stats.revenue)}</span>
-            <span className="text-zinc-400"> − </span>
-            <span className="text-zinc-600">{formatVND(stats.cost)}</span>
-            <span className="text-zinc-400"> − </span>
-            <span className="text-amber-300">{formatVND(totalSalary)}</span>
-            <span className="text-zinc-400"> = </span>
-            <span className={`font-extrabold ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatVND(netProfit)}</span>
-            <span className="text-zinc-400 text-xs block mt-1">Doanh số − Giá vốn − Lương = Lợi nhuận ròng</span>
+          <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 text-sm font-mono text-center space-y-1">
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
+              <span className="text-blue-400">{formatVND(stats.revenue)}</span>
+              <span className="text-zinc-500"> − </span>
+              <span className="text-zinc-400">{formatVND(stats.cost)}</span>
+              <span className="text-zinc-500"> − </span>
+              <span className="text-amber-400">{formatVND(totalSalary)}</span>
+              <span className="text-zinc-500"> − </span>
+              <span className="text-rose-400">{formatVND(totalExpenses)}</span>
+              <span className="text-zinc-500"> − </span>
+              <span className="text-orange-400">{formatVND(tax)}</span>
+              <span className="text-zinc-500"> = </span>
+              <span className={`font-extrabold text-base ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatVND(netProfit)}</span>
+            </div>
+            <p className="text-[10px] text-zinc-500">Doanh thu − Vốn nhập − Lương − Chi phí phát sinh − Thuế = Lợi nhuận ròng</p>
           </div>
 
-          {/* Salary in range grouped */}
-          {salaryLoading ? (
-            <div className="flex items-center justify-center py-10"><div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>
-          ) : salaryInRangeGrouped.length > 0 && (
-            <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-zinc-700">
-                <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-amber-600" /> Lương phát sinh trong kỳ (theo nhân viên)</h3>
+          <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-zinc-700 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><Receipt className="w-4 h-4 text-rose-400" /> Chi phí phát sinh</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">Các khoản chi ngoài lương và nhập hàng.</p>
               </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5">
+                  <span className="text-xs text-zinc-400 font-bold whitespace-nowrap">Thuế:</span>
+                  <input type="number" min={0} value={tax} onChange={e => setTax(Number(e.target.value) || 0)}
+                    className="w-28 bg-transparent text-amber-400 font-mono text-sm focus:outline-none text-right" placeholder="0" />
+                  <span className="text-xs text-zinc-500">₫</span>
+                </div>
+                <button onClick={openAddExpense}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-700 hover:bg-rose-600 text-white rounded-lg text-xs font-bold cursor-pointer transition">
+                  <Plus className="w-3.5 h-3.5" /> Thêm
+                </button>
+              </div>
+            </div>
+            {expensesLoading ? (
+              <div className="flex items-center justify-center py-10"><div className="w-6 h-6 border-4 border-rose-600 border-t-transparent rounded-full animate-spin" /></div>
+            ) : expenses.length === 0 ? (
+              <div className="p-10 text-center text-zinc-500">
+                <Receipt className="w-8 h-8 mx-auto stroke-1 mb-2 text-zinc-600" />
+                <p className="text-sm font-semibold">Chưa có chi phí phát sinh</p>
+              </div>
+            ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
                     <tr>
-                      <th className="px-4 py-3">Họ tên</th>
-                      <th className="px-4 py-3 text-center">Đợt</th>
-                      <th className="px-4 py-3 text-center">Ngày công</th>
-                      <th className="px-4 py-3 text-right">Tổng phát sinh</th>
+                      <th className="px-4 py-3 w-10">STT</th>
+                      <th className="px-4 py-3">Nội dung</th>
+                      <th className="px-4 py-3">Ngày</th>
+                      <th className="px-4 py-3 text-right">Số tiền</th>
+                      <th className="px-4 py-3">Ghi chú</th>
+                      <th className="px-4 py-3 w-20"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-700">
-                    {salaryInRangeGrouped.map(g => (
-                      <tr key={g.fullName} className="hover:bg-amber-950/20 transition">
-                        <td className="px-4 py-3 font-semibold text-zinc-100">{g.fullName}</td>
-                        <td className="px-4 py-3 text-center">
-                          {g.lumpCount > 0 ? <span className="px-2 py-0.5 bg-blue-900/30 text-blue-300 rounded-md text-xs font-bold">{g.lumpCount} đợt</span> : <span className="text-zinc-600">—</span>}
+                    {expenses.map((e, i) => (
+                      <tr key={e.id} className="hover:bg-zinc-800/20 transition">
+                        <td className="px-4 py-3 text-zinc-500 text-xs">{i + 1}</td>
+                        <td className="px-4 py-3 font-semibold text-zinc-100">{e.content}</td>
+                        <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{e.date}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-rose-400">{formatVND(e.amount)}</td>
+                        <td className="px-4 py-3 text-xs text-zinc-500">{e.notes ?? ''}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => openEditExpense(e)} className="p-1.5 text-zinc-500 hover:text-blue-400 rounded-lg transition cursor-pointer"><Pencil className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => setDeleteExpenseConfirm(e.id)} className="p-1.5 text-zinc-500 hover:text-rose-400 rounded-lg transition cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          {g.totalDays > 0 ? <span className="px-2 py-0.5 bg-purple-900/30 text-purple-300 rounded-md text-xs font-bold">{g.totalDays} ngày</span> : <span className="text-zinc-600">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold font-mono text-amber-700">{formatVND(g.totalAmount)}</td>
                       </tr>
                     ))}
+                    <tr className="bg-rose-950/20 border-t-2 border-rose-800/50">
+                      <td colSpan={3} className="px-4 py-3 font-extrabold text-zinc-100">Tổng chi phí phát sinh</td>
+                      <td className="px-4 py-3 text-right font-extrabold font-mono text-rose-400">{formatVND(totalExpenses)}</td>
+                      <td colSpan={2}></td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
@@ -1188,12 +1297,12 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                         <div className="bg-zinc-800 rounded-xl border border-zinc-700 p-4 text-center">
                           <p className="text-[10px] font-bold text-zinc-500 uppercase mb-3">QR CHUYỂN KHOẢN CÔNG NỢ</p>
                           <img
-                            src={buildSalaryQR(partner!.bankName!, partner!.bankAccount!, payAmt, partner!.bankAccountName ?? partner!.name, `Tra no ${payingOrder.id}`)}
+                            src={buildSalaryQR(partner!.bankName!, partner!.bankAccount!, payAmt, partner!.bankAccountName ?? partner!.fullName, `Tra no ${payingOrder.id}`)}
                             alt="QR chuyển khoản"
                             className="w-44 h-44 mx-auto rounded-xl object-contain"
                           />
                           <p className="text-sm font-mono font-bold text-zinc-200 mt-2">{partner!.bankAccount}</p>
-                          <p className="text-xs text-zinc-400">{SAL_BANKS.find(b => b.id === partner!.bankName)?.name ?? partner!.bankName} · {partner!.bankAccountName ?? partner!.name}</p>
+                          <p className="text-xs text-zinc-400">{SAL_BANKS.find(b => b.id === partner!.bankName)?.name ?? partner!.bankName} · {partner!.bankAccountName ?? partner!.fullName}</p>
                           <p className="text-xs text-emerald-400 font-mono font-bold mt-1">{formatVND(payAmt)}</p>
                         </div>
                       )}
@@ -1409,6 +1518,69 @@ export default function Reports({ invoices, products, isManager = false, onSelec
               <div className="flex gap-3">
                 <button onClick={() => setDeleteSalaryConfirm(null)} className="flex-1 px-4 py-2 border border-zinc-700 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
                 <button onClick={() => handleDeleteSalary(deleteSalaryConfirm)} className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold cursor-pointer">Xóa</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showExpenseForm && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md">
+              <div className="flex items-center justify-between p-5 border-b border-zinc-700">
+                <h3 className="font-bold text-zinc-100">{editingExpenseId ? 'Sửa chi phí' : 'Thêm chi phí phát sinh'}</h3>
+                <button onClick={() => setShowExpenseForm(false)} className="text-zinc-500 hover:text-zinc-200 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-zinc-300 mb-1 block">Nội dung <span className="text-rose-500">*</span></label>
+                  <input value={expenseForm.content} onChange={e => setExpenseForm(f => ({ ...f, content: e.target.value }))}
+                    className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-zinc-800 text-zinc-100" placeholder="VD: Tiền điện tháng 6" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Số tiền (VNĐ) <span className="text-rose-500">*</span></label>
+                    <input type="number" min={0} value={expenseForm.amount} onChange={e => setExpenseForm(f => ({ ...f, amount: e.target.value }))}
+                      className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500 bg-zinc-800 text-zinc-100" placeholder="500000" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Ngày <span className="text-rose-500">*</span></label>
+                    <input type="date" value={expenseForm.date} onChange={e => setExpenseForm(f => ({ ...f, date: e.target.value }))}
+                      className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-zinc-800 text-zinc-100" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-zinc-300 mb-1 block">Ghi chú</label>
+                  <input value={expenseForm.notes} onChange={e => setExpenseForm(f => ({ ...f, notes: e.target.value }))}
+                    className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-zinc-800 text-zinc-100" placeholder="Tuỳ chọn..." />
+                </div>
+                {expenseSaveError && <p className="text-xs text-rose-400">{expenseSaveError}</p>}
+              </div>
+              <div className="flex gap-3 p-5 border-t border-zinc-700">
+                <button onClick={() => setShowExpenseForm(false)} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer hover:bg-zinc-800">Hủy</button>
+                <button onClick={handleSaveExpense} disabled={expenseSaving || !expenseForm.content.trim() || !expenseForm.amount || !expenseForm.date}
+                  className="flex-1 px-4 py-2 bg-rose-700 hover:bg-rose-600 disabled:!opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                  {expenseSaving ? 'Lưu...' : editingExpenseId ? 'Cập nhật' : 'Thêm chi phí'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deleteExpenseConfirm && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+              <Trash2 className="w-10 h-10 text-rose-400 mx-auto mb-3" />
+              <h3 className="font-bold text-zinc-100 mb-1">Xóa chi phí này?</h3>
+              <p className="text-sm text-zinc-400 mb-5">Hành động này không thể hoàn tác.</p>
+              <div className="flex gap-3">
+                <button onClick={() => setDeleteExpenseConfirm(null)} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Không</button>
+                <button onClick={() => handleDeleteExpense(deleteExpenseConfirm)} className="flex-1 px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-lg text-sm font-bold cursor-pointer">Xóa</button>
               </div>
             </motion.div>
           </div>

@@ -163,6 +163,7 @@ export default function Inventory({
     if (!ep) return [];
     const entries: { inv: Invoice; qty: number; unitPrice: number }[] = [];
     invoices.forEach(inv => {
+      if ((inv.status ?? 'completed') === 'cancelled') return;
       const item = inv.items.find(it => it.product.id === expandedId);
       if (item) entries.push({ inv, qty: item.quantity, unitPrice: item.product.sellingPrice });
     });
@@ -673,6 +674,7 @@ export default function Inventory({
                     <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll}
                       className="w-4 h-4 accent-blue-600 cursor-pointer align-middle" title="Chọn tất cả" />
                   </th>
+                  <th className="px-3 py-3 w-10 text-center text-zinc-400 text-xs font-bold uppercase tracking-wider">#</th>
                   <th className="px-4 py-3.5 font-mono cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('sku')}>
                     Mã SP <SortIcon field="sku" />
                   </th>
@@ -691,7 +693,7 @@ export default function Inventory({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {sortedProducts.map((p) => {
+                {sortedProducts.map((p, idx) => {
                   const isOutOfStock = p.stock <= 0;
                   const isLowStock = !isOutOfStock && p.stock <= p.minStock;
                   let stockBadgeClass = 'bg-slate-50 border-slate-200 text-slate-700';
@@ -713,6 +715,7 @@ export default function Inventory({
                           <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(p.id)}
                             className="w-4 h-4 accent-blue-600 cursor-pointer align-middle" />
                         </td>
+                        <td className="px-3 py-3 text-center text-zinc-500 text-xs">{idx + 1}</td>
                         <td className="px-4 py-3.5 font-mono font-medium text-slate-500 whitespace-nowrap">{p.sku}</td>
                         <td className="px-4 py-3.5 max-w-[200px]">
                           <div className="font-bold text-slate-800 truncate flex items-center gap-1.5">
@@ -757,7 +760,7 @@ export default function Inventory({
                       {/* Panel mở rộng — chi tiết đầy đủ */}
                       {isExpanded && (
                         <tr className="bg-zinc-900">
-                          <td colSpan={10} className="px-5 py-4 border-t border-zinc-700" onClick={e => e.stopPropagation()}>
+                          <td colSpan={11} className="px-5 py-4 border-t border-zinc-700" onClick={e => e.stopPropagation()}>
                             {/* Tab bar */}
                             <div className="flex border-b border-zinc-700 mb-4">
                               <button onClick={() => setExpandedTab('info')} className={`px-4 py-2 text-xs font-bold transition border-b-2 -mb-px ${expandedTab === 'info' ? 'border-amber-400 text-amber-400' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Thông tin</button>

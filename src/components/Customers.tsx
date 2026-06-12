@@ -12,7 +12,7 @@ interface CustomersProps {
   onDelete: (id: string) => void;
 }
 
-const EMPTY_FORM = { fullName: '', phone: '', email: '', birthDate: '', address: '', notes: '' };
+const EMPTY_FORM = { code: '', fullName: '', phone: '', email: '', birthDate: '', address: '', notes: '' };
 
 function toDateStr(d: Date) { return d.toISOString().slice(0, 10); }
 
@@ -113,7 +113,7 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
 
   function openEdit(c: Customer) {
     setEditingId(c.id);
-    setForm({ fullName: c.fullName, phone: c.phone, email: c.email ?? '', birthDate: c.birthDate ?? '', address: c.address ?? '', notes: c.notes ?? '' });
+    setForm({ code: c.code ?? '', fullName: c.fullName, phone: c.phone, email: c.email ?? '', birthDate: c.birthDate ?? '', address: c.address ?? '', notes: c.notes ?? '' });
     setErrors({}); setShowForm(true);
   }
 
@@ -137,9 +137,9 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
     try {
       if (editingId) {
         const existing = customers.find(c => c.id === editingId)!;
-        await onUpdate({ ...existing, fullName: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim() || undefined, birthDate: form.birthDate || undefined, address: form.address.trim() || undefined, notes: form.notes.trim() || undefined });
+        await onUpdate({ ...existing, code: form.code.trim() || undefined, fullName: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim() || undefined, birthDate: form.birthDate || undefined, address: form.address.trim() || undefined, notes: form.notes.trim() || undefined });
       } else {
-        await onAdd({ id: `cust_${Date.now()}`, fullName: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim() || undefined, birthDate: form.birthDate || undefined, address: form.address.trim() || undefined, notes: form.notes.trim() || undefined, createdAt: new Date().toISOString() });
+        await onAdd({ id: `cust_${Date.now()}`, code: form.code.trim() || undefined, fullName: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim() || undefined, birthDate: form.birthDate || undefined, address: form.address.trim() || undefined, notes: form.notes.trim() || undefined, createdAt: new Date().toISOString() });
       }
       setShowForm(false);
     } finally {
@@ -184,6 +184,7 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
                 <tr>
+                  <th className="px-3 py-3 w-10 text-center text-zinc-400 text-xs font-bold uppercase">#</th>
                   <th className="px-4 py-3">Họ tên</th>
                   <th className="px-4 py-3">Điện thoại</th>
                   <th className="px-4 py-3">Ngày sinh</th>
@@ -193,13 +194,17 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map(c => (
+                {filtered.map((c, idx) => (
                   <React.Fragment key={c.id}>
                     <tr
                       className={`transition cursor-pointer ${expandedId === c.id ? 'bg-amber-950/20' : 'hover:bg-zinc-800/40'}`}
                       onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
                     >
-                      <td className="px-4 py-3 font-semibold text-slate-800">{c.fullName}</td>
+                      <td className="px-3 py-3 text-center text-zinc-500 text-xs">{idx + 1}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">
+                        {c.fullName}
+                        {c.code && <span className="text-[10px] font-mono text-zinc-500 ml-1">{c.code}</span>}
+                      </td>
                       <td className="px-4 py-3 font-mono text-slate-600">{c.phone}</td>
                       <td className="px-4 py-3 text-slate-500 text-xs">{c.birthDate ? new Date(c.birthDate + 'T00:00:00').toLocaleDateString('vi-VN') : '—'}</td>
                       <td className="px-4 py-3 text-slate-500 text-xs">{c.email || '—'}</td>
@@ -212,7 +217,7 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                       const stats = customerStats[c.phone];
                       return (
                         <tr>
-                          <td colSpan={6} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
+                          <td colSpan={7} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
                             <div className="space-y-3">
                               {/* Info grid */}
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
@@ -320,6 +325,11 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                 <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
               <div className="p-5 space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-zinc-400 mb-1 block">Mã khách hàng</label>
+                  <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
+                    className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none bg-zinc-800 text-amber-400 font-mono" placeholder="VD: KH001" />
+                </div>
                 <div>
                   <label className="text-xs font-bold text-slate-600 mb-1 block">Họ tên <span className="text-rose-500">*</span></label>
                   <input value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))}
