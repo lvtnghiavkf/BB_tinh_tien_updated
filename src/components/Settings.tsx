@@ -285,7 +285,7 @@ export default function Settings({ config, onSaveConfig }: SettingsProps) {
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
               {staffList.map((s) => (
-                <tr key={s.id} className="hover:bg-slate-50/55 transition">
+                <tr key={s.id} className="hover:bg-zinc-800/40 transition">
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2.5">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${s.role === 'manager' ? 'bg-blue-600' : 'bg-emerald-600'}`}>

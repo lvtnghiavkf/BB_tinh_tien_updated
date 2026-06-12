@@ -212,7 +212,7 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                       const stats = customerStats[c.phone];
                       return (
                         <tr>
-                          <td colSpan={6} className="px-4 py-4 border-t border-slate-200 bg-slate-50/50" onClick={e => e.stopPropagation()}>
+                          <td colSpan={6} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
                             <div className="space-y-3">
                               {/* Info grid */}
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
@@ -433,7 +433,7 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                 {historyInvoices.length === 0 ? (
                   <div className="text-center py-10 text-slate-400 text-sm">Không có đơn hàng trong khoảng thời gian này.</div>
                 ) : historyInvoices.map(inv => (
-                  <div key={inv.id} className="border border-slate-200 rounded-xl p-4 space-y-2 bg-slate-50/50">
+                  <div key={inv.id} className="border border-slate-200 rounded-xl p-4 space-y-2 bg-zinc-800/20">
                     <div className="flex items-center justify-between">
                       <span className="font-mono font-bold text-xs text-slate-600">{inv.id}</span>
                       <span className="text-xs text-slate-400">{new Date(inv.timestamp).toLocaleString('vi-VN')}</span>

@@ -323,7 +323,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
           return (
             <div key={o.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 cursor-pointer hover:bg-slate-50/60 transition"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 cursor-pointer hover:bg-zinc-800/40 transition"
                 onClick={() => setExpandedId(isOpen ? null : o.id)}
               >
                 <div className="flex items-center gap-3">
@@ -399,7 +399,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                               {o.items.map((it, i) => {
                                 const prod = products.find(p => p.id === it.productId);
                                 return (
-                                  <tr key={i} className="text-slate-700 hover:bg-slate-50/50">
+                                  <tr key={i} className="text-slate-700 hover:bg-zinc-800/40">
                                     <td className="px-3 py-2 text-center text-slate-400">{i + 1}</td>
                                     <td className="px-3 py-2 font-mono text-slate-500">{it.sku}</td>
                                     <td className="px-3 py-2 font-medium">{it.productName}</td>
@@ -648,7 +648,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                         {draftItems.map((item, idx) => {
                           const prod = item.productId ? products.find(p => p.id === item.productId) : null;
                           return (
-                            <tr key={idx} className="hover:bg-slate-50/50">
+                            <tr key={idx} className="hover:bg-zinc-800/40">
                               <td className="px-2 py-1.5 text-slate-400 text-center">{idx + 1}</td>
                               <td className="px-2 py-1.5">
                                 <select value={item.productId} onChange={e => setItemProduct(idx, e.target.value)}
@@ -783,7 +783,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                     {viewingHistoryOrder.items.map((it, i) => {
                       const prod = products.find(p => p.id === it.productId);
                       return (
-                        <tr key={i} className="text-slate-700 hover:bg-slate-50/50">
+                        <tr key={i} className="text-slate-700 hover:bg-zinc-800/40">
                           <td className="px-3 py-2 text-center text-slate-400">{i + 1}</td>
                           <td className="px-3 py-2 font-mono text-slate-500">{it.sku}</td>
                           <td className="px-3 py-2 font-medium">{it.productName}</td>

@@ -323,7 +323,7 @@ export default function Checkout({
                 onClick={() => addToCart(p)}
                 className={`bg-white p-3.5 rounded-xl border transition-all group relative flex flex-col justify-between shadow-xs select-none cursor-pointer ${
                   inCartQty > 0
-                    ? 'border-blue-300 bg-blue-50/30'
+                    ? 'border-blue-600 bg-blue-900/20'
                     : 'border-slate-200 hover:border-blue-400 hover:shadow-xs'
                 }`}
               >
@@ -605,7 +605,7 @@ export default function Checkout({
                   onClick={() => setPaymentMethod(method)}
                   className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
                     paymentMethod === method
-                      ? 'border-blue-600 bg-blue-50/20 text-blue-700 font-bold shadow-xs'
+                      ? 'border-blue-500 bg-blue-900/30 text-blue-300 font-bold shadow-xs'
                       : 'border-slate-200 hover:border-slate-350 bg-white text-slate-600'
                   }`}
                 >

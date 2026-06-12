@@ -326,7 +326,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={6} className="px-4 py-4 border-t border-slate-200 bg-slate-50/50" onClick={e => e.stopPropagation()}>
+                          <td colSpan={6} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
                             <div className="space-y-3">
                               {/* Info grid — always show phone/email/address */}
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
@@ -456,7 +456,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP" />
                 </div>
-                <div className="border border-emerald-200 rounded-xl p-3 space-y-2 bg-emerald-50/40">
+                <div className="border border-emerald-200 rounded-xl p-3 space-y-2 bg-emerald-900/20">
                   <p className="text-xs font-bold text-emerald-800 flex items-center gap-1">
                     <Building2 className="w-3.5 h-3.5" /> Tài khoản ngân hàng
                   </p>
