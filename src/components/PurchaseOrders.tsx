@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Product, Partner, PurchaseOrder } from '../types';
-import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, ChevronsUpDown, Search, Download, ChevronDown, GitBranch } from 'lucide-react';
+import { Product, Partner, PurchaseOrder, PaymentLog } from '../types';
+import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, ChevronsUpDown, Search, Download, ChevronDown, GitBranch, History, Banknote, Building2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
+import { insertPaymentLog } from '../lib/db';
 
 interface PurchaseOrdersProps {
   products: Product[];
@@ -12,6 +13,8 @@ interface PurchaseOrdersProps {
   onUpdate: (o: PurchaseOrder) => void;
   onDelete: (id: string) => void;
   onUpdateProductsStock: (updates: { id: string; delta: number }[]) => void;
+  paymentLogs?: PaymentLog[];
+  onPaymentLogAdded?: (log: PaymentLog) => void;
 }
 
 const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
@@ -19,7 +22,7 @@ const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
 type OrderType = 'all' | 'import' | 'export';
 type DraftItem = { productId: string; productName: string; sku: string; quantity: number; unitCost: number };
 
-export default function PurchaseOrders({ products, partners, orders, onAdd, onUpdate, onDelete, onUpdateProductsStock }: PurchaseOrdersProps) {
+export default function PurchaseOrders({ products, partners, orders, onAdd, onUpdate, onDelete, onUpdateProductsStock, paymentLogs = [], onPaymentLogAdded }: PurchaseOrdersProps) {
   const [typeFilter, setTypeFilter] = useState<OrderType>('all');
   const [partnerFilter, setPartnerFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -29,6 +32,8 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   const [payFull, setPayFull] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedTab, setExpandedTab] = useState<Record<string, 'info' | 'history'>>({});
+  const [payMethod, setPayMethod] = useState<'bank' | 'cash'>('bank');
 
   // Create / revise form state
   const [draftType, setDraftType] = useState<'import' | 'export'>('import');
@@ -81,14 +86,6 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     XLSX.writeFile(wb, `xuat_nhap_hang_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
-  const filtered = useMemo(() => {
-    return orders.filter(o => {
-      if (typeFilter !== 'all' && o.type !== typeFilter) return false;
-      if (partnerFilter && o.partnerId !== partnerFilter) return false;
-      return true;
-    });
-  }, [orders, typeFilter, partnerFilter]);
-
   // Detect revision: ID contains "." (e.g. PO123.1) OR has parentId from legacy DB
   function getParentId(o: PurchaseOrder): string | null {
     if (o.parentId) return o.parentId;
@@ -97,28 +94,53 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     return null;
   }
 
-  // Group: root orders with their revisions displayed right after
-  const ordersWithRevisions = useMemo(() => {
-    const revisionMap = new Map<string, PurchaseOrder[]>();
-    const roots: PurchaseOrder[] = [];
-    filtered.forEach(o => {
+  // Group: for each root+revisions family, show only the LATEST revision as main row.
+  // Original + older revisions appear in the expanded panel "Lịch sử điều chỉnh".
+  // Build a map: rootId → { representative: PurchaseOrder; history: PurchaseOrder[] }
+  const orderFamilies = useMemo(() => {
+    // Collect ALL orders (not just filtered) to build revision map across families
+    const revisionMap = new Map<string, PurchaseOrder[]>(); // rootId → [rev1, rev2, ...]
+    const rootMap = new Map<string, PurchaseOrder>();        // rootId → root order
+
+    orders.forEach(o => {
       const pid = getParentId(o);
       if (pid) {
         const arr = revisionMap.get(pid) ?? [];
         arr.push(o);
         revisionMap.set(pid, arr);
       } else {
-        roots.push(o);
+        rootMap.set(o.id, o);
       }
     });
-    const result: Array<{ order: PurchaseOrder; isRevision: boolean }> = [];
-    roots.forEach(root => {
-      result.push({ order: root, isRevision: false });
+
+    // For each root, pick representative = latest revision (or root if no revisions)
+    const families: Array<{
+      representative: PurchaseOrder;
+      root: PurchaseOrder;
+      revisions: PurchaseOrder[]; // sorted oldest→newest
+    }> = [];
+
+    rootMap.forEach((root) => {
       const revs = (revisionMap.get(root.id) ?? []).sort((a, b) => a.id.localeCompare(b.id));
-      revs.forEach(r => result.push({ order: r, isRevision: true }));
+      const representative = revs.length > 0 ? revs[revs.length - 1] : root;
+      families.push({ representative, root, revisions: revs });
     });
-    return result;
-  }, [filtered]);
+
+    // Sort families by representative timestamp descending
+    families.sort((a, b) => b.representative.timestamp.localeCompare(a.representative.timestamp));
+
+    return families;
+  }, [orders]);
+
+  // Apply filter on top of families
+  const filteredFamilies = useMemo(() => {
+    return orderFamilies.filter(f => {
+      const rep = f.representative;
+      if (typeFilter !== 'all' && rep.type !== typeFilter) return false;
+      if (partnerFilter && rep.partnerId !== partnerFilter) return false;
+      return true;
+    });
+  }, [orderFamilies, typeFilter, partnerFilter]);
 
   const draftTotal = useMemo(() =>
     draftItems.reduce((s, it) => s + it.quantity * it.unitCost, 0), [draftItems]);
@@ -235,7 +257,20 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     if (amount <= 0) return;
     setSaving(true);
     try {
-      await onUpdate({ ...payingOrder, paidAmount: payingOrder.paidAmount + amount });
+      const newPaid = payingOrder.paidAmount + amount;
+      const newRemaining = payingOrder.totalAmount - newPaid;
+      await onUpdate({ ...payingOrder, paidAmount: newPaid });
+      const log: PaymentLog = {
+        id: `PL${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        type: 'debt',
+        referenceId: payingOrder.id,
+        referenceName: payingOrder.partnerName,
+        amount,
+        paymentMethod: payMethod,
+        remaining: newRemaining,
+      };
+      try { await insertPaymentLog(log); if (onPaymentLogAdded) onPaymentLogAdded(log); } catch (_) {}
       setPayingOrder(null);
     } finally {
       setSaving(false);
@@ -271,30 +306,33 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
 
       {/* List */}
       <div className="space-y-3">
-        {ordersWithRevisions.length === 0 ? (
+        {filteredFamilies.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
             <ChevronsUpDown className="w-10 h-10 mx-auto stroke-1 mb-2 text-slate-300" />
             <p className="text-sm font-semibold">Chưa có phiếu nào</p>
           </div>
-        ) : ordersWithRevisions.map(({ order: o, isRevision }) => {
+        ) : filteredFamilies.map(({ representative: o, root, revisions }) => {
+          const hasRevisions = revisions.length > 0;
           const remaining = o.totalAmount - o.paidAmount;
           const isOpen = expandedId === o.id;
+          const activeTab = expandedTab[o.id] ?? 'info';
+          const orderLogs = paymentLogs.filter(l => l.referenceId === o.id || l.referenceId === root.id || revisions.some(r => l.referenceId === r.id));
           return (
-            <div key={o.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${isRevision ? 'ml-6 border-amber-200' : 'border-slate-200'}`}>
+            <div key={o.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div
                 className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 cursor-pointer hover:bg-slate-50/60 transition"
                 onClick={() => setExpandedId(isOpen ? null : o.id)}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${isRevision ? 'bg-amber-50 text-amber-600' : o.type === 'import' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
-                    {isRevision ? <GitBranch className="w-4 h-4" /> : o.type === 'import' ? <ArrowDownToLine className="w-4 h-4" /> : <ArrowUpFromLine className="w-4 h-4" />}
+                  <div className={`p-2 rounded-lg ${o.type === 'import' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                    {o.type === 'import' ? <ArrowDownToLine className="w-4 h-4" /> : <ArrowUpFromLine className="w-4 h-4" />}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-sm text-slate-800">
-                        {isRevision ? 'Phiếu điều chỉnh' : o.type === 'import' ? 'Phiếu nhập hàng' : 'Phiếu xuất hàng'}
+                        {o.type === 'import' ? 'Phiếu nhập hàng' : 'Phiếu xuất hàng'}
                       </p>
-                      {isRevision && <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded">Điều chỉnh</span>}
+                      {hasRevisions && <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded">Đã điều chỉnh</span>}
                     </div>
                     <p className="text-xs text-slate-500 font-mono">{o.id} · {new Date(o.timestamp).toLocaleDateString('vi-VN')}</p>
                     {o.partnerName && <p className="text-xs text-slate-500">{o.partnerName}</p>}
@@ -317,58 +355,137 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                 {isOpen && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden">
-                    <div className="px-4 pb-4 border-t border-slate-100">
-                      {(o.revisionNote || (isRevision && o.notes?.startsWith('[DC:'))) && (
-                        <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
-                          <GitBranch className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                          <span>{o.revisionNote || o.notes?.replace(/^\[DC:[^\]]+\]\s*—?\s*/, '') || o.notes}</span>
+                    <div className="border-t border-slate-100">
+                      {/* Tabs */}
+                      <div className="flex border-b border-slate-100 bg-slate-50">
+                        {(['info', 'history'] as const).map(tab => (
+                          <button key={tab}
+                            onClick={e => { e.stopPropagation(); setExpandedTab(prev => ({ ...prev, [o.id]: tab })); }}
+                            className={`px-4 py-2 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${activeTab === tab ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-slate-500 hover:text-slate-700'}`}>
+                            {tab === 'info' ? <><ChevronsUpDown className="w-3.5 h-3.5" /> Thông tin</> : <><History className="w-3.5 h-3.5" /> Lịch sử ({orderLogs.length + (hasRevisions ? revisions.length : 0)})</>}
+                          </button>
+                        ))}
+                      </div>
+
+                      {activeTab === 'info' && (
+                        <div className="px-4 pb-4 pt-3">
+                          {o.notes?.startsWith('[DC:') && (
+                            <div className="mb-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                              <GitBranch className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                              <span>{o.notes.replace(/^\[DC:[^\]]+\]\s*—?\s*/, '') || 'Phiếu điều chỉnh'}</span>
+                            </div>
+                          )}
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100">
+                                <th className="pb-2 text-left">Sản phẩm</th>
+                                <th className="pb-2 text-right">SL</th>
+                                <th className="pb-2 text-right">Đơn giá</th>
+                                <th className="pb-2 text-right">Thành tiền</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {o.items.map((it, i) => (
+                                <tr key={i} className="text-slate-700">
+                                  <td className="py-1.5">{it.productName} <span className="text-slate-400 font-mono">({it.sku})</span></td>
+                                  <td className="py-1.5 text-right">{it.quantity}</td>
+                                  <td className="py-1.5 text-right font-mono">{formatVND(it.unitCost)}</td>
+                                  <td className="py-1.5 text-right font-mono font-bold">{formatVND(it.unitCost * it.quantity)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr className="border-t border-slate-200 font-bold text-slate-800">
+                                <td colSpan={3} className="pt-2 text-right pr-4">Tổng cộng:</td>
+                                <td className="pt-2 text-right font-mono">{formatVND(o.totalAmount)}</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                          {o.notes && !o.notes.startsWith('[DC:') && <p className="text-xs text-slate-400 mt-2 italic">{o.notes}</p>}
+                          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
+                            {o.type === 'import' && remaining > 0 && (
+                              <button onClick={e => { e.stopPropagation(); openPay(o); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                Trả nợ
+                              </button>
+                            )}
+                            <button onClick={e => { e.stopPropagation(); openRevise(o); }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                              <GitBranch className="w-3.5 h-3.5" /> Điều chỉnh phiếu
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); setDeleteConfirm(o.id); }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                              <Trash2 className="w-3.5 h-3.5" /> Xóa
+                            </button>
+                          </div>
                         </div>
                       )}
-                      <table className="w-full text-xs mt-3">
-                        <thead>
-                          <tr className="text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100">
-                            <th className="pb-2 text-left">Sản phẩm</th>
-                            <th className="pb-2 text-right">SL</th>
-                            <th className="pb-2 text-right">Đơn giá</th>
-                            <th className="pb-2 text-right">Thành tiền</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                          {o.items.map((it, i) => (
-                            <tr key={i} className="text-slate-700">
-                              <td className="py-1.5">{it.productName} <span className="text-slate-400 font-mono">({it.sku})</span></td>
-                              <td className="py-1.5 text-right">{it.quantity}</td>
-                              <td className="py-1.5 text-right font-mono">{formatVND(it.unitCost)}</td>
-                              <td className="py-1.5 text-right font-mono font-bold">{formatVND(it.unitCost * it.quantity)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t border-slate-200 font-bold text-slate-800">
-                            <td colSpan={3} className="pt-2 text-right pr-4">Tổng cộng:</td>
-                            <td className="pt-2 text-right font-mono">{formatVND(o.totalAmount)}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                      {o.notes && !o.notes.startsWith('[DC:') && <p className="text-xs text-slate-400 mt-2 italic">{o.notes}</p>}
 
-                      {/* Action buttons */}
-                      <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
-                        {o.type === 'import' && remaining > 0 && (
-                          <button onClick={e => { e.stopPropagation(); openPay(o); }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                            Trả nợ
-                          </button>
-                        )}
-                        <button onClick={e => { e.stopPropagation(); openRevise(o); }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                          <GitBranch className="w-3.5 h-3.5" /> Điều chỉnh phiếu
-                        </button>
-                        <button onClick={e => { e.stopPropagation(); setDeleteConfirm(o.id); }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                          <Trash2 className="w-3.5 h-3.5" /> Xóa
-                        </button>
-                      </div>
+                      {activeTab === 'history' && (
+                        <div className="px-4 pb-4 pt-3 space-y-3">
+                          {/* Payment logs */}
+                          {orderLogs.length > 0 && (
+                            <div>
+                              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Lịch sử thanh toán</p>
+                              <div className="space-y-1.5">
+                                {orderLogs.map(log => (
+                                  <div key={log.id} className="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 text-xs">
+                                    <div className="flex items-center gap-2">
+                                      {log.paymentMethod === 'bank' ? <Building2 className="w-3.5 h-3.5 text-emerald-600" /> : <Banknote className="w-3.5 h-3.5 text-emerald-600" />}
+                                      <div>
+                                        <p className="font-bold text-slate-700">{log.paymentMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt'}</p>
+                                        <p className="text-slate-400">{new Date(log.createdAt).toLocaleString('vi-VN')}</p>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="font-bold text-emerald-700 font-mono">+{formatVND(log.amount)}</p>
+                                      <p className="text-slate-400 font-mono">Còn: {formatVND(log.remaining)}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {/* Revision history */}
+                          {hasRevisions && (
+                            <div>
+                              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Lịch sử điều chỉnh</p>
+                              <div className="space-y-2">
+                                {/* Show root first */}
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-bold text-slate-700 font-mono">{root.id}</span>
+                                    <span className="text-slate-400">{new Date(root.timestamp).toLocaleDateString('vi-VN')} · Phiếu gốc</span>
+                                  </div>
+                                  <p className="text-slate-500">{formatVND(root.totalAmount)}{root.notes && !root.notes.startsWith('[DC:') ? ` · ${root.notes}` : ''}</p>
+                                </div>
+                                {revisions.slice(0, -1).map(rev => (
+                                  <div key={rev.id} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="font-bold text-amber-800 font-mono flex items-center gap-1"><GitBranch className="w-3 h-3" />{rev.id}</span>
+                                      <span className="text-amber-600">{new Date(rev.timestamp).toLocaleDateString('vi-VN')}</span>
+                                    </div>
+                                    <p className="text-amber-700">{formatVND(rev.totalAmount)}</p>
+                                    {rev.notes?.startsWith('[DC:') && <p className="text-amber-600 mt-0.5">{rev.notes.replace(/^\[DC:[^\]]+\]\s*—?\s*/, '')}</p>}
+                                  </div>
+                                ))}
+                                {/* Current (latest) revision */}
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-bold text-blue-800 font-mono flex items-center gap-1"><GitBranch className="w-3 h-3" />{o.id}</span>
+                                    <span className="text-blue-600">{new Date(o.timestamp).toLocaleDateString('vi-VN')} · Hiện tại</span>
+                                  </div>
+                                  <p className="text-blue-700">{formatVND(o.totalAmount)}</p>
+                                  {o.notes?.startsWith('[DC:') && <p className="text-blue-600 mt-0.5">{o.notes.replace(/^\[DC:[^\]]+\]\s*—?\s*/, '')}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {orderLogs.length === 0 && !hasRevisions && (
+                            <p className="text-xs text-slate-400 text-center py-4">Chưa có lịch sử</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -582,6 +699,17 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                 <div className="flex justify-between text-sm"><span className="text-slate-600">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-slate-600">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
                 <div className="border-t border-slate-200 pt-3 space-y-2">
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-1.5 block">Hình thức thanh toán</label>
+                    <div className="flex gap-2">
+                      {(['bank', 'cash'] as const).map(m => (
+                        <button key={m} onClick={() => setPayMethod(m)}
+                          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs font-bold transition cursor-pointer ${payMethod === m ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                          {m === 'bank' ? <><Building2 className="w-3.5 h-3.5" /> Chuyển khoản</> : <><Banknote className="w-3.5 h-3.5" /> Tiền mặt</>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={payFull} onChange={e => { setPayFull(e.target.checked); if (e.target.checked) setPayAmount(String(payingOrder.totalAmount - payingOrder.paidAmount)); }} className="w-4 h-4 cursor-pointer" />
                     <span className="text-sm font-medium text-slate-700">Thanh toán toàn bộ</span>

@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Product, Invoice, StoreConfig, PaymentMethod, Customer, Partner, PurchaseOrder, PurchaseOrderItem, SalaryEntry } from '../types';
+import { Product, Invoice, StoreConfig, PaymentMethod, Customer, Partner, PurchaseOrder, PurchaseOrderItem, SalaryEntry, PaymentLog } from '../types';
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
@@ -380,4 +380,40 @@ export async function updateSalaryEntry(s: SalaryEntry): Promise<void> {
 export async function deleteSalaryEntry(id: string): Promise<void> {
   const { error } = await supabase.from('salary_entries').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ── Payment Logs ───────────────────────────────────────────────────────────────
+
+export async function insertPaymentLog(log: PaymentLog): Promise<void> {
+  const { error } = await supabase.from('payment_logs').insert({
+    id: log.id,
+    created_at: log.createdAt,
+    type: log.type,
+    reference_id: log.referenceId,
+    reference_name: log.referenceName ?? null,
+    amount: log.amount,
+    payment_method: log.paymentMethod,
+    remaining: log.remaining,
+    notes: log.notes ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function fetchPaymentLogs(): Promise<PaymentLog[]> {
+  const { data, error } = await supabase
+    .from('payment_logs')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data.map(r => ({
+    id: r.id,
+    createdAt: r.created_at,
+    type: r.type as 'debt' | 'salary',
+    referenceId: r.reference_id,
+    referenceName: r.reference_name ?? undefined,
+    amount: r.amount,
+    paymentMethod: r.payment_method as 'bank' | 'cash',
+    remaining: r.remaining,
+    notes: r.notes ?? undefined,
+  }));
 }

@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Partner, PurchaseOrder } from '../types';
-import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine, Download, Upload, ChevronDown, MapPin, Building2, CreditCard, CheckCircle2 } from 'lucide-react';
+import { Partner, PurchaseOrder, PaymentLog } from '../types';
+import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine, Download, Upload, ChevronDown, MapPin, Building2, CreditCard, CheckCircle2, Banknote } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
+import { insertPaymentLog } from '../lib/db';
 
 interface PartnersProps {
   partners: Partner[];
@@ -11,6 +12,7 @@ interface PartnersProps {
   onUpdate: (p: Partner) => void;
   onDelete: (id: string) => void;
   onUpdateOrder: (o: PurchaseOrder) => void;
+  onPaymentLogAdded?: (log: PaymentLog) => void;
 }
 
 const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
@@ -42,7 +44,7 @@ function buildQR(bankCode: string, account: string, amount: number, info: string
   return `https://img.vietqr.io/image/${bankCode}-${account}-compact.jpg?${params}`;
 }
 
-export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, onDelete, onUpdateOrder }: PartnersProps) {
+export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, onDelete, onUpdateOrder, onPaymentLogAdded }: PartnersProps) {
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -56,6 +58,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [payMethod, setPayMethod] = useState<'bank' | 'cash'>('bank');
   const xlsxRef = useRef<HTMLInputElement>(null);
 
   const allBrands = useMemo(
@@ -185,17 +188,33 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
   function openPay(o: PurchaseOrder) {
     const remaining = o.totalAmount - o.paidAmount;
     setPayingOrder(o); setPayAmount(String(remaining)); setPayFull(false); setPaymentConfirmed(false);
+    setPayMethod(debtFor?.bankAccount ? 'bank' : 'cash');
   }
 
-  async function confirmPay() {
+  async function confirmPay(method?: 'bank' | 'cash') {
     if (!payingOrder) return;
     const remaining = payingOrder.totalAmount - payingOrder.paidAmount;
     const amount = payFull ? remaining : Math.min(Number(payAmount) || 0, remaining);
     if (amount <= 0) return;
+    const usedMethod = method ?? payMethod;
     setSaving(true);
     try {
-      await onUpdateOrder({ ...payingOrder, paidAmount: payingOrder.paidAmount + amount });
+      const newPaid = payingOrder.paidAmount + amount;
+      const newRemaining = payingOrder.totalAmount - newPaid;
+      await onUpdateOrder({ ...payingOrder, paidAmount: newPaid });
+      const log: PaymentLog = {
+        id: `PL${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        type: 'debt',
+        referenceId: payingOrder.id,
+        referenceName: payingOrder.partnerName,
+        amount,
+        paymentMethod: usedMethod,
+        remaining: newRemaining,
+      };
+      try { await insertPaymentLog(log); if (onPaymentLogAdded) onPaymentLogAdded(log); } catch (_) {}
       setPayingOrder(null);
+      setPaymentConfirmed(false);
     } finally {
       setSaving(false);
     }
@@ -556,7 +575,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                   </div>
                   <h3 className="font-bold text-emerald-700 text-lg mb-1">Thanh toán hoàn tất</h3>
                   <p className="text-sm text-slate-500 mb-5">Đã ghi nhận giao dịch thành công.</p>
-                  <button onClick={confirmPay} disabled={saving}
+                  <button onClick={() => confirmPay('bank')} disabled={saving}
                     className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
                     {saving ? 'Đang lưu...' : 'Xác nhận & Đóng'}
                   </button>
@@ -570,6 +589,17 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                     <div className="flex justify-between text-sm"><span className="text-slate-600">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
                     <div className="flex justify-between text-sm"><span className="text-slate-600">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
                     <div className="border-t border-slate-200 pt-3 space-y-2">
+                      <div>
+                        <label className="text-xs font-bold text-slate-600 mb-1.5 block">Hình thức</label>
+                        <div className="flex gap-2">
+                          {(['bank', 'cash'] as const).map(m => (
+                            <button key={m} onClick={() => setPayMethod(m)}
+                              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border text-xs font-bold transition cursor-pointer ${payMethod === m ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-200 text-slate-600'}`}>
+                              {m === 'bank' ? <><Building2 className="w-3.5 h-3.5" /> CK</> : <><Banknote className="w-3.5 h-3.5" /> Tiền mặt</>}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={payFull} onChange={e => {
                           setPayFull(e.target.checked);
@@ -588,8 +618,8 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                     </div>
                   </div>
 
-                  {/* QR Code if partner has bank info */}
-                  {debtFor?.bankName && debtFor?.bankAccount && Number(payAmount) > 0 && (
+                  {/* QR Code if partner has bank info and bank method selected */}
+                  {payMethod === 'bank' && debtFor?.bankName && debtFor?.bankAccount && (payFull || Number(payAmount) > 0) && (
                     <div className="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
                       <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Quét QR chuyển khoản</p>
                       <img
@@ -604,13 +634,13 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
 
                   <div className="flex gap-3">
                     <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
-                    {debtFor?.bankAccount ? (
+                    {payMethod === 'bank' && debtFor?.bankAccount ? (
                       <button onClick={() => setPaymentConfirmed(true)} disabled={Number(payAmount) <= 0 && !payFull}
                         className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
                         Đã chuyển khoản
                       </button>
                     ) : (
-                      <button onClick={confirmPay} disabled={saving}
+                      <button onClick={() => confirmPay(payMethod)} disabled={saving}
                         className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
                         {saving ? 'Đang lưu...' : 'Xác nhận'}
                       </button>

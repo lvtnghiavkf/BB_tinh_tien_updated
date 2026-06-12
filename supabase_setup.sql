@@ -207,3 +207,19 @@ alter table public.purchase_orders add column if not exists revision_note text;
 create policy "public_all_po"           on public.purchase_orders      for all using (true) with check (true);
 create policy "public_all_poi"          on public.purchase_order_items for all using (true) with check (true);
 create policy "public_all_salary"       on public.salary_entries       for all using (true) with check (true);
+
+-- ── Bảng 10: Lịch sử thanh toán (công nợ & lương) ────────────
+create table if not exists public.payment_logs (
+  id               text primary key,
+  created_at       timestamptz not null default now(),
+  type             text not null,             -- 'debt' | 'salary'
+  reference_id     text not null,             -- PO ID hoặc salary entry ID
+  reference_name   text,                      -- Tên đối tác hoặc nhân viên
+  amount           bigint not null default 0, -- Số tiền thanh toán lần này
+  payment_method   text not null,             -- 'bank' | 'cash'
+  remaining        bigint not null default 0, -- Còn nợ sau thanh toán
+  notes            text                       -- Ghi chú (kỳ lương, v.v.)
+);
+
+alter table public.payment_logs enable row level security;
+create policy "public_all_payment_logs" on public.payment_logs for all using (true) with check (true);

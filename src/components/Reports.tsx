@@ -1,14 +1,15 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Invoice, Product, PurchaseOrder, SalaryEntry } from '../types';
+import { Invoice, Product, PurchaseOrder, SalaryEntry, PaymentLog } from '../types';
 import {
   TrendingUp, Calendar, FileText, Printer,
   CircleDollarSign, Search, ShoppingBag, Percent, Receipt,
   ArrowDownToLine, Banknote, Wallet, Users, Plus, Pencil, Trash2,
-  X, Download, Upload, AlertCircle
+  X, Download, Upload, AlertCircle, Building2, History
 } from 'lucide-react';
 import {
   fetchPurchaseOrders, updatePurchaseOrder,
   fetchSalaryEntries, insertSalaryEntry, updateSalaryEntry, deleteSalaryEntry,
+  insertPaymentLog, fetchPaymentLogs,
 } from '../lib/db';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -93,6 +94,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
   const [salaryPayCash, setSalaryPayCash] = useState(false);
   const [salaryPaySaving, setSalaryPaySaving] = useState(false);
   const [salaryPayConfirmed, setSalaryPayConfirmed] = useState(false);
+  const [paymentLogs, setPaymentLogs] = useState<PaymentLog[]>([]);
   const xlsxInputRef = useRef<HTMLInputElement>(null);
 
   // Date range
@@ -207,6 +209,12 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       .finally(() => setSalaryLoading(false));
   }, [reportType]);
 
+  // Load payment logs when debt or salary tab
+  useEffect(() => {
+    if (reportType !== 'debt' && reportType !== 'salary') return;
+    fetchPaymentLogs().then(data => setPaymentLogs(data)).catch(() => {});
+  }, [reportType]);
+
   // Debt tab: group by partner
   const debtByPartner = useMemo(() => {
     const map: Record<string, { partnerName: string; total: number; paid: number; orders: PurchaseOrder[] }> = {};
@@ -306,10 +314,25 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     if (amount <= 0) return;
     setSalaryPaySaving(true);
     try {
-      const updated: SalaryEntry = { ...payingSalary, paidAmount: (payingSalary.paidAmount ?? 0) + amount, isPaidCash: salaryPayCash };
+      const newPaid = (payingSalary.paidAmount ?? 0) + amount;
+      const newRemaining = payingSalary.amount - newPaid;
+      const updated: SalaryEntry = { ...payingSalary, paidAmount: newPaid, isPaidCash: salaryPayCash };
       await updateSalaryEntry(updated);
       setSalaryEntries(prev => prev.map(e => e.id === payingSalary.id ? updated : e));
+      const log: PaymentLog = {
+        id: `PL${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        type: 'salary',
+        referenceId: payingSalary.id,
+        referenceName: payingSalary.fullName,
+        amount,
+        paymentMethod: salaryPayCash ? 'cash' : 'bank',
+        remaining: newRemaining,
+        notes: `${payingSalary.dateFrom} → ${payingSalary.dateTo}`,
+      };
+      try { await insertPaymentLog(log); setPaymentLogs(prev => [log, ...prev]); } catch (_) {}
       setPayingSalary(null);
+      setSalaryPayConfirmed(false);
     } finally {
       setSalaryPaySaving(false);
     }
@@ -622,6 +645,46 @@ export default function Reports({ invoices, products, isManager = false, onSelec
               ))}
             </>
           )}
+          {/* Payment log history for debt */}
+          {!debtLoading && paymentLogs.filter(l => l.type === 'debt').length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-200">
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><History className="w-4 h-4 text-emerald-600" /> Lịch sử thanh toán công nợ</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3">Thời gian</th>
+                      <th className="px-4 py-3">Đối tác</th>
+                      <th className="px-4 py-3">Phiếu</th>
+                      <th className="px-4 py-3">Hình thức</th>
+                      <th className="px-4 py-3 text-right">Số tiền</th>
+                      <th className="px-4 py-3 text-right">Còn nợ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {paymentLogs.filter(l => l.type === 'debt').map(log => (
+                      <tr key={log.id} className="hover:bg-slate-50/50 transition">
+                        <td className="px-4 py-3 text-xs text-slate-500 font-mono whitespace-nowrap">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">{log.referenceName}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-slate-500">{log.referenceId}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${log.paymentMethod === 'bank' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                            {log.paymentMethod === 'bank' ? <><Building2 className="w-3 h-3" /> CK</> : <><Banknote className="w-3 h-3" /> Tiền mặt</>}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-emerald-700">{formatVND(log.amount)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-xs font-bold">
+                          {log.remaining > 0 ? <span className="text-rose-600">{formatVND(log.remaining)}</span> : <span className="text-emerald-600">Đủ</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -761,6 +824,46 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                   </table>
                 </div>
               )}
+            </div>
+          )}
+          {/* Payment log history for salary */}
+          {paymentLogs.filter(l => l.type === 'salary').length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-200">
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><History className="w-4 h-4 text-blue-600" /> Lịch sử trả lương</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-3">Thời gian</th>
+                      <th className="px-4 py-3">Nhân viên</th>
+                      <th className="px-4 py-3">Hình thức</th>
+                      <th className="px-4 py-3 text-right">Số tiền</th>
+                      <th className="px-4 py-3 text-right">Còn lại</th>
+                      <th className="px-4 py-3">Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {paymentLogs.filter(l => l.type === 'salary').map(log => (
+                      <tr key={log.id} className="hover:bg-slate-50/50 transition">
+                        <td className="px-4 py-3 text-xs text-slate-500 font-mono whitespace-nowrap">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">{log.referenceName}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${log.paymentMethod === 'bank' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                            {log.paymentMethod === 'bank' ? <><Building2 className="w-3 h-3" /> CK</> : <><Banknote className="w-3 h-3" /> Tiền mặt</>}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-emerald-700">{formatVND(log.amount)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-xs font-bold">
+                          {log.remaining > 0 ? <span className="text-rose-600">{formatVND(log.remaining)}</span> : <span className="text-emerald-600">Đủ</span>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-400">{log.notes}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
           {salaryError && <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-700 text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" />{salaryError}</div>}

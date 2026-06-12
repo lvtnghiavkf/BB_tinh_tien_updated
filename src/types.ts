@@ -111,6 +111,18 @@ export interface PurchaseOrder {
   revisionNote?: string; // Ghi chú điều chỉnh tự động
 }
 
+export interface PaymentLog {
+  id: string;
+  createdAt: string;           // ISO timestamp
+  type: 'debt' | 'salary';
+  referenceId: string;         // PO ID hoặc salary entry ID
+  referenceName?: string;      // Tên đối tác hoặc nhân viên
+  amount: number;              // Số tiền thanh toán lần này
+  paymentMethod: 'bank' | 'cash';
+  remaining: number;           // Còn nợ sau thanh toán
+  notes?: string;              // Ghi chú thêm (kỳ lương, v.v.)
+}
+
 export interface SalaryEntry {
   id: string;
   fullName: string;

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Customer, Partner, PurchaseOrder, Invoice, Product } from '../types';
+import { Customer, Partner, PurchaseOrder, Invoice, Product, PaymentLog } from '../types';
 import {
   fetchCustomers, insertCustomer, updateCustomer, deleteCustomer,
   fetchPartners, insertPartner, updatePartner, deletePartner,
   fetchPurchaseOrders, insertPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder,
+  fetchPaymentLogs,
 } from '../lib/db';
 import Customers from './Customers';
 import Partners from './Partners';
@@ -23,6 +24,7 @@ export default function Data({ invoices, products, onUpdateProductsStock }: Data
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [paymentLogs, setPaymentLogs] = useState<PaymentLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -31,10 +33,11 @@ export default function Data({ invoices, products, onUpdateProductsStock }: Data
       setLoading(true);
       setError('');
       try {
-        const [c, p, o] = await Promise.all([fetchCustomers(), fetchPartners(), fetchPurchaseOrders()]);
+        const [c, p, o, logs] = await Promise.all([fetchCustomers(), fetchPartners(), fetchPurchaseOrders(), fetchPaymentLogs().catch(() => [] as PaymentLog[])]);
         setCustomers(c);
         setPartners(p);
         setOrders(o);
+        setPaymentLogs(logs);
       } catch (err: any) {
         setError('Không thể tải dữ liệu. Hãy chạy lại supabase_setup.sql trên Supabase SQL Editor.');
         console.error(err);
@@ -132,12 +135,15 @@ export default function Data({ invoices, products, onUpdateProductsStock }: Data
           {subTab === 'partners' && (
             <Partners partners={partners} purchaseOrders={orders}
               onAdd={handleAddPartner} onUpdate={handleUpdatePartner} onDelete={handleDeletePartner}
-              onUpdateOrder={handleUpdateOrder} />
+              onUpdateOrder={handleUpdateOrder}
+              onPaymentLogAdded={log => setPaymentLogs(prev => [log, ...prev])} />
           )}
           {subTab === 'orders' && (
             <PurchaseOrders products={products} partners={partners} orders={orders}
               onAdd={handleAddOrder} onUpdate={handleUpdateOrder} onDelete={handleDeleteOrder}
-              onUpdateProductsStock={onUpdateProductsStock} />
+              onUpdateProductsStock={onUpdateProductsStock}
+              paymentLogs={paymentLogs}
+              onPaymentLogAdded={log => setPaymentLogs(prev => [log, ...prev])} />
           )}
         </>
       )}
