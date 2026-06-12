@@ -18,18 +18,22 @@ create table if not exists public.products (
   category      text not null default '',
   cost_price    bigint not null default 0,   -- Giá nhập (VND)
   selling_price bigint not null default 0,   -- Giá bán (VND)
-  stock         integer not null default 0,  -- Tồn kho
-  min_stock     integer not null default 0,  -- Định mức tồn tối thiểu
+  stock         numeric(10,3) not null default 0,  -- Tồn kho (hỗ trợ tối đa 3 số thập phân)
+  min_stock     numeric(10,3) not null default 0,  -- Định mức tồn tối thiểu
   unit          text not null default 'Cái',
   hidden        boolean not null default false, -- Ẩn khỏi màn Bán hàng
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
 
--- Nếu bạn ĐÃ chạy bản schema cũ trước đây, chạy thêm 2 dòng này để
--- nâng cấp bảng products (an toàn, không mất dữ liệu):
+-- Nếu bạn ĐÃ chạy bản schema cũ trước đây, chạy các dòng này để
+-- nâng cấp bảng (an toàn, không mất dữ liệu):
 alter table public.products add column if not exists brand  text    not null default '';
 alter table public.products add column if not exists hidden boolean not null default false;
+alter table public.products alter column stock     type numeric(10,3) using stock::numeric;
+alter table public.products alter column min_stock type numeric(10,3) using min_stock::numeric;
+alter table public.invoice_items       alter column quantity type numeric(10,3) using quantity::numeric;
+alter table public.purchase_order_items alter column quantity type numeric(10,3) using quantity::numeric;
 
 
 -- ── Bảng 2: Thông tin cửa hàng (chỉ 1 dòng, id = 1) ─────────
@@ -67,7 +71,7 @@ create table if not exists public.invoice_items (
   invoice_id       text not null references public.invoices(id) on delete cascade,
   product_id       text,
   product_snapshot jsonb,        -- lưu lại sản phẩm tại thời điểm bán
-  quantity         integer not null default 1,
+  quantity         numeric(10,3) not null default 1,  -- Hỗ trợ tối đa 3 số thập phân (vd: 0,125 kg)
   unit_price       bigint not null default 0
 );
 
@@ -143,7 +147,7 @@ create table if not exists public.purchase_order_items (
   product_id   text,
   product_name text not null,
   sku          text,
-  quantity     integer not null default 1,
+  quantity     numeric(10,3) not null default 1,  -- Hỗ trợ tối đa 3 số thập phân
   unit_cost    bigint not null default 0
 );
 

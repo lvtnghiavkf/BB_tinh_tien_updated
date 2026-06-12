@@ -27,12 +27,16 @@ function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDat
 const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
 
 function calcSalaryInRange(entry: SalaryEntry, from: Date, to: Date): number {
+  // Chuẩn hóa tất cả về 00:00:00 để tính ngày chính xác
+  // VD: 15/05 = 1 ngày, 15/05-18/05 = 4 ngày (15,16,17,18)
   const eFrom = new Date(entry.dateFrom + 'T00:00:00');
-  const eTo = new Date(entry.dateTo + 'T23:59:59');
-  if (eFrom > to || eTo < from) return 0;
+  const eTo   = new Date(entry.dateTo   + 'T00:00:00');
+  const fromDay = new Date(from); fromDay.setHours(0, 0, 0, 0);
+  const toDay   = new Date(to);   toDay.setHours(0, 0, 0, 0);
+  if (eFrom > toDay || eTo < fromDay) return 0;
   if (entry.calcType === 'lump') return entry.amount;
-  const ovFrom = eFrom > from ? eFrom : from;
-  const ovTo = eTo < to ? eTo : to;
+  const ovFrom = eFrom > fromDay ? eFrom : fromDay;
+  const ovTo   = eTo   < toDay   ? eTo   : toDay;
   const days = Math.round((ovTo.getTime() - ovFrom.getTime()) / 86400000) + 1;
   return entry.amount * Math.max(1, days);
 }
@@ -245,9 +249,11 @@ export default function Reports({ invoices, products, onSelectInvoiceForReprint 
         map[e.fullName].lumpCount++;
       } else {
         const eFrom = new Date(e.dateFrom + 'T00:00:00');
-        const eTo = new Date(e.dateTo + 'T23:59:59');
-        const ovFrom = eFrom > dateFrom ? eFrom : dateFrom;
-        const ovTo = eTo < dateTo ? eTo : dateTo;
+        const eTo   = new Date(e.dateTo   + 'T00:00:00');
+        const fromDay = new Date(dateFrom); fromDay.setHours(0, 0, 0, 0);
+        const toDay   = new Date(dateTo);   toDay.setHours(0, 0, 0, 0);
+        const ovFrom = eFrom > fromDay ? eFrom : fromDay;
+        const ovTo   = eTo   < toDay   ? eTo   : toDay;
         const days = Math.max(1, Math.round((ovTo.getTime() - ovFrom.getTime()) / 86400000) + 1);
         map[e.fullName].totalDays += days;
       }
