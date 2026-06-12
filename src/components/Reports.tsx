@@ -1104,7 +1104,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {showDebtPaidHistory && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col">
               <div className="flex items-center justify-between p-5 border-b border-zinc-700">
                 <h3 className="font-bold text-zinc-100 flex items-center gap-2"><History className="w-5 h-5 text-emerald-400" /> Lịch sử thanh toán công nợ</h3>
                 <div className="flex items-center gap-2">
@@ -1167,7 +1167,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {showSalaryPaidHistory && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col">
               <div className="flex items-center justify-between p-5 border-b border-zinc-700">
                 <h3 className="font-bold text-zinc-100 flex items-center gap-2"><History className="w-5 h-5 text-blue-400" /> Lịch sử trả lương</h3>
                 <div className="flex items-center gap-2">
@@ -1235,7 +1235,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
           return (
             <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-lg">
+                className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-3xl">
                 {payDebtConfirmed ? (
                   <div className="p-8 text-center">
                     <div className="w-16 h-16 bg-emerald-900/40 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -1335,7 +1335,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {showSalaryForm && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-xl">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-3xl">
               <div className="flex items-center justify-between p-5 border-b border-zinc-700">
                 <h3 className="font-bold text-zinc-100">{editingSalaryId ? 'Sửa lương' : 'Thêm lương'}</h3>
                 <button onClick={() => setShowSalaryForm(false)} className="text-zinc-500 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
@@ -1437,7 +1437,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {payingSalary && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md p-6">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-2xl p-6">
               {salaryPayConfirmed ? (
                 <div className="text-center py-4">
                   <div className="w-16 h-16 bg-emerald-900/40 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -1528,7 +1528,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {showExpenseForm && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-2xl">
               <div className="flex items-center justify-between p-5 border-b border-zinc-700">
                 <h3 className="font-bold text-zinc-100">{editingExpenseId ? 'Sửa chi phí' : 'Thêm chi phí phát sinh'}</h3>
                 <button onClick={() => setShowExpenseForm(false)} className="text-zinc-500 hover:text-zinc-200 cursor-pointer"><X className="w-5 h-5" /></button>

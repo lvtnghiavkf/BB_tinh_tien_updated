@@ -858,7 +858,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
         {payingOrder && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md p-6">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-2xl p-6">
               <h3 className="font-bold text-zinc-100 mb-1">Thanh toán phiếu nhập</h3>
               <p className="text-xs text-zinc-400 font-mono mb-4">{payingOrder.id} · {payingOrder.partnerName}</p>
               <div className="space-y-3 mb-5">

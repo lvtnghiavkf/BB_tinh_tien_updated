@@ -477,7 +477,7 @@ export default function Invoices({
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl w-full max-w-2xl my-4"
+              className="bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl w-full max-w-5xl my-4"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700">

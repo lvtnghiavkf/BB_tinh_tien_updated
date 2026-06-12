@@ -935,7 +935,7 @@ export default function Inventory({
         {isFormOpen && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-xl overflow-hidden flex flex-col">
+              className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-4xl overflow-hidden flex flex-col">
               <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                 <h3 className="font-extrabold text-slate-800 text-base">{editingProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm mới hàng hóa'}</h3>
                 <button onClick={() => setIsFormOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1 cursor-pointer">✕</button>
@@ -1038,7 +1038,7 @@ export default function Inventory({
         {isBulkEditOpen && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-md overflow-hidden flex flex-col">
+              className="bg-white rounded-2xl shadow-xl border border-slate-100 w-full max-w-3xl overflow-hidden flex flex-col">
               <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                 <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-1.5">
                   <Pencil className="w-4 h-4 text-blue-600" /> Sửa nhóm ({selectedProducts.length} SP)
@@ -1085,7 +1085,7 @@ export default function Inventory({
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]"
             onClick={() => { if (!ledgerSaving) { setLedgerInvoice(null); setLedgerMode('view'); } }}>
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl"
               onClick={e => e.stopPropagation()}>
 
               {ledgerMode !== 'edit' ? (

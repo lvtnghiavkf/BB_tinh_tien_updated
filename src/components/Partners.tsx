@@ -432,7 +432,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
         {showForm && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-md my-4">
+              className="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-4">
               <div className="flex items-center justify-between p-5 border-b border-slate-200">
                 <h3 className="font-bold text-slate-800">{editingId ? 'Sửa đối tác' : 'Thêm đối tác'}</h3>
                 <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
@@ -543,7 +543,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
         {debtFor && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+              className="bg-white rounded-2xl shadow-xl w-full max-w-4xl flex flex-col max-h-[90vh]">
               <div className="flex items-center justify-between p-5 border-b border-slate-200">
                 <div>
                   <h3 className="font-bold text-slate-800">Công nợ nhập hàng — {debtFor.fullName}</h3>
@@ -619,7 +619,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
         {payingOrder && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6">
               {paymentConfirmed ? (
                 <div className="text-center py-4">
                   <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
