@@ -325,67 +325,88 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                         </td>
                       </tr>
                       {isExpanded && (
-                        <tr className="bg-blue-50/20">
-                          <td colSpan={6} className="px-4 py-3 border-t border-blue-100">
-                            {/* Info cards */}
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3 text-xs">
-                              {p.phones.length > 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-4 border-t border-slate-200 bg-slate-50/50" onClick={e => e.stopPropagation()}>
+                            <div className="space-y-3">
+                              {/* Info grid — always show phone/email/address */}
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                                {/* Điện thoại — luôn hiện */}
                                 <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
                                   <Phone className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
                                   <div>
                                     <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Điện thoại</p>
-                                    {p.phones.map((ph, i) => <p key={i} className="text-slate-700 font-mono">{ph}</p>)}
+                                    {p.phones.length > 0
+                                      ? p.phones.map((ph, i) => <p key={i} className="text-slate-700 font-mono">{ph}</p>)
+                                      : <p className="text-slate-400 italic">Chưa có</p>}
                                   </div>
                                 </div>
-                              )}
-                              {p.emails.length > 0 && (
+
+                                {/* Email — luôn hiện */}
                                 <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
                                   <Mail className="w-3.5 h-3.5 text-purple-400 mt-0.5 shrink-0" />
                                   <div>
                                     <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Email</p>
-                                    {p.emails.map((em, i) => <p key={i} className="text-slate-700">{em}</p>)}
+                                    {p.emails.length > 0
+                                      ? p.emails.map((em, i) => <p key={i} className="text-slate-700">{em}</p>)
+                                      : <p className="text-slate-400 italic">Chưa có</p>}
                                   </div>
                                 </div>
-                              )}
-                              {p.address && (
-                                <div className="col-span-2 sm:col-span-3 bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
-                                  <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+
+                                {/* Địa chỉ — luôn hiện */}
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <MapPin className="w-3.5 h-3.5 text-orange-400 mt-0.5 shrink-0" />
                                   <div>
                                     <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Địa chỉ</p>
-                                    <p className="text-slate-700">{p.address}</p>
+                                    {p.address
+                                      ? <p className="text-slate-700">{p.address}</p>
+                                      : <p className="text-slate-400 italic">Chưa có</p>}
                                   </div>
                                 </div>
-                              )}
-                              {(p.bankName || p.bankAccount) && (
-                                <div className="col-span-2 bg-white rounded-lg border border-emerald-200 px-3 py-2 flex gap-2">
-                                  <CreditCard className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
-                                  <div>
-                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Tài khoản ngân hàng</p>
-                                    <p className="text-slate-700 font-mono font-bold">{p.bankAccount}</p>
-                                    <p className="text-slate-500">{VIET_BANKS.find(b => b.id === p.bankName)?.name ?? p.bankName} · {p.bankAccountName}</p>
+
+                                {/* Tài khoản ngân hàng */}
+                                {(p.bankName || p.bankAccount) ? (
+                                  <div className="col-span-2 sm:col-span-2 bg-emerald-50/60 rounded-lg border border-emerald-200 px-3 py-2 flex gap-2">
+                                    <CreditCard className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                                    <div>
+                                      <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Tài khoản ngân hàng</p>
+                                      <p className="text-slate-800 font-mono font-bold">{p.bankAccount}</p>
+                                      <p className="text-slate-500">{VIET_BANKS.find(b => b.id === p.bankName)?.name ?? p.bankName}{p.bankAccountName ? ` · ${p.bankAccountName}` : ''}</p>
+                                    </div>
                                   </div>
-                                </div>
-                              )}
-                              {p.notes && (
-                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2">
-                                  <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Ghi chú</p>
-                                  <p className="text-slate-700">{p.notes}</p>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <button onClick={e => { e.stopPropagation(); setDebtFor(p); }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                                <ArrowDownToLine className="w-3.5 h-3.5" /> Xem công nợ
-                              </button>
-                              <button onClick={e => { e.stopPropagation(); openEdit(p); }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                                <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
-                              </button>
-                              <button onClick={e => { e.stopPropagation(); setDeleteConfirm(p.id); }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                                <Trash2 className="w-3.5 h-3.5" /> Xóa
-                              </button>
+                                ) : (
+                                  <div className="col-span-2 sm:col-span-2 bg-white rounded-lg border border-dashed border-slate-300 px-3 py-2 flex gap-2 opacity-60">
+                                    <CreditCard className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                                    <div>
+                                      <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Tài khoản ngân hàng</p>
+                                      <p className="text-slate-400 italic">Chưa có — bấm Chỉnh sửa để thêm</p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Ghi chú — chỉ hiện khi có */}
+                                {p.notes && (
+                                  <div className="bg-white rounded-lg border border-slate-200 px-3 py-2">
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Ghi chú</p>
+                                    <p className="text-slate-700">{p.notes}</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
+                                <button onClick={e => { e.stopPropagation(); setDebtFor(p); }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                  <ArrowDownToLine className="w-3.5 h-3.5" /> Xem công nợ
+                                </button>
+                                <button onClick={e => { e.stopPropagation(); openEdit(p); }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                  <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
+                                </button>
+                                <button onClick={e => { e.stopPropagation(); setDeleteConfirm(p.id); }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                  <Trash2 className="w-3.5 h-3.5" /> Xóa
+                                </button>
+                              </div>
                             </div>
                           </td>
                         </tr>
