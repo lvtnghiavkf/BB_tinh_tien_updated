@@ -6,12 +6,13 @@
 import React, { useState, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { Product, Invoice } from '../types';
+import { uploadProductImage } from '../lib/db';
 import {
   Plus, Search, Edit2, Trash2, Box, ArrowUpRight,
   AlertTriangle, RotateCcw, PackageCheck, PackageX, DollarSign,
   Eye, EyeOff, Download, Upload, FileSpreadsheet, Tag, Pencil,
   ChevronDown, Copy, ArrowUpDown, ChevronUp,
-  X, Ban, Printer, BookOpen,
+  X, Ban, Printer, BookOpen, ImageIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -103,6 +104,9 @@ export default function Inventory({
   const [minStock, setMinStock] = useState<number>(10);
   const [customCategory, setCustomCategory] = useState('');
   const [formError, setFormError] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
 
   // Trường form "Sửa nhóm"
   const [bulkBrand, setBulkBrand] = useState('');
@@ -110,6 +114,7 @@ export default function Inventory({
   const [bulkPricePercent, setBulkPricePercent] = useState<number>(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Thống kê nhanh — âm tồn kho cũng tính là hết hàng
   const totalProducts = products.length;
@@ -358,6 +363,7 @@ export default function Inventory({
     setCategory(categories[0] || 'Nước giải khát');
     setUnit('Cái'); setCostPrice(0); setSellingPrice(0); setStock(0); setMinStock(5);
     setCustomCategory(''); setFormError('');
+    setImageFile(null); setImagePreview('');
     setIsFormOpen(true);
   };
 
@@ -367,10 +373,11 @@ export default function Inventory({
     setCategory(p.category); setUnit(p.unit); setCostPrice(p.costPrice);
     setSellingPrice(p.sellingPrice); setStock(p.stock); setMinStock(p.minStock);
     setCustomCategory(''); setFormError('');
+    setImageFile(null); setImagePreview(p.imageUrl ?? '');
     setIsFormOpen(true);
   };
 
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
     if (!name.trim()) { setFormError('Vui lòng nhập tên sản phẩm.'); return; }
@@ -378,13 +385,30 @@ export default function Inventory({
     if (costPrice > sellingPrice && sellingPrice > 0) setFormError('Cảnh báo: Giá nhập cao hơn giá bán (Bán lỗ!).');
 
     const finalCategory = category === 'new-cat' ? (customCategory.trim() || 'Khác') : category;
+    const productId = editingProduct ? editingProduct.id : `prod-${Date.now()}`;
+
+    let imageUrl: string | undefined = editingProduct?.imageUrl;
+    if (imageFile) {
+      try {
+        setImageUploading(true);
+        imageUrl = await uploadProductImage(imageFile, productId);
+      } catch {
+        setFormError('Lỗi tải ảnh lên. Vui lòng thử lại.');
+        setImageUploading(false);
+        return;
+      } finally {
+        setImageUploading(false);
+      }
+    }
+
     const productPayload: Product = {
-      id: editingProduct ? editingProduct.id : `prod-${Date.now()}`,
+      id: productId,
       sku, name, brand: brand.trim(), barcode: barcode.trim() || undefined,
       category: finalCategory, unit,
       costPrice: Number(costPrice), sellingPrice: Number(sellingPrice),
       stock: Number(stock), minStock: Number(minStock),
       hidden: editingProduct ? editingProduct.hidden : false,
+      imageUrl,
     };
 
     if (editingProduct) onUpdateProduct(productPayload);
@@ -675,6 +699,7 @@ export default function Inventory({
                       className="w-4 h-4 accent-blue-600 cursor-pointer align-middle" title="Chọn tất cả" />
                   </th>
                   <th className="px-3 py-3 w-10 text-center text-zinc-400 text-xs font-bold uppercase tracking-wider">#</th>
+                  <th className="px-2 py-3.5 w-12 text-center text-zinc-400 text-xs font-bold uppercase">Ảnh</th>
                   <th className="px-4 py-3.5 font-mono cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('sku')}>
                     Mã SP <SortIcon field="sku" />
                   </th>
@@ -716,6 +741,15 @@ export default function Inventory({
                             className="w-4 h-4 accent-blue-600 cursor-pointer align-middle" />
                         </td>
                         <td className="px-3 py-3 text-center text-zinc-500 text-xs">{idx + 1}</td>
+                        <td className="px-2 py-2 text-center">
+                          {p.imageUrl ? (
+                            <img src={p.imageUrl} alt={p.name} className="w-9 h-9 object-cover rounded-md border border-slate-200 mx-auto" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-md border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center mx-auto">
+                              <ImageIcon className="w-4 h-4 text-slate-300" />
+                            </div>
+                          )}
+                        </td>
                         <td className="px-4 py-3.5 font-mono font-medium text-slate-500 whitespace-nowrap">{p.sku}</td>
                         <td className="px-4 py-3.5 max-w-[200px]">
                           <div className="font-bold text-slate-800 truncate flex items-center gap-1.5">
@@ -1019,13 +1053,49 @@ export default function Inventory({
                   </div>
                 </div>
 
+                {/* Hình ảnh sản phẩm */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-2">HÌNH ẢNH SẢN PHẨM</label>
+                  <div className="flex items-center gap-4">
+                    {imagePreview ? (
+                      <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 flex-shrink-0">
+                        <img src={imagePreview} alt="preview" className="w-full h-full object-cover" />
+                        <button type="button"
+                          onClick={() => { setImageFile(null); setImagePreview(''); if (imageInputRef.current) imageInputRef.current.value = ''; }}
+                          className="absolute top-0.5 right-0.5 bg-rose-500 hover:bg-rose-600 text-white rounded-full p-0.5 cursor-pointer transition">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-20 h-20 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center flex-shrink-0 text-slate-300">
+                        <ImageIcon className="w-7 h-7" />
+                        <span className="text-[10px] mt-1">Chưa có ảnh</span>
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <button type="button" onClick={() => imageInputRef.current?.click()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 cursor-pointer transition font-medium">
+                        <Upload className="w-3.5 h-3.5" /> {imagePreview ? 'Đổi ảnh' : 'Tải ảnh lên'}
+                      </button>
+                      <p className="text-[10px] text-slate-400">JPG, PNG, WEBP · Tối đa 5 MB</p>
+                    </div>
+                    <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (f) { setImageFile(f); setImagePreview(URL.createObjectURL(f)); }
+                      }} />
+                  </div>
+                </div>
+
                 {formError && (
                   <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg text-rose-700 text-xs font-medium">{formError}</div>
                 )}
 
                 <div className="pt-4 border-t border-slate-200 flex justify-end gap-3">
                   <button type="button" onClick={() => setIsFormOpen(false)} className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-600 rounded-lg text-xs font-bold transition cursor-pointer">Hủy</button>
-                  <button type="submit" className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer">Lưu sản phẩm</button>
+                  <button type="submit" disabled={imageUploading} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-xs font-bold transition cursor-pointer">
+                    {imageUploading ? 'Đang tải ảnh...' : 'Lưu sản phẩm'}
+                  </button>
                 </div>
               </form>
             </motion.div>

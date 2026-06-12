@@ -409,6 +409,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                             <thead>
                               <tr className="text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100 bg-slate-50">
                                 <th className="px-3 pb-2 pt-1 text-center w-8">STT</th>
+                                <th className="px-2 pb-2 pt-1 text-center w-10">Ảnh</th>
                                 <th className="px-3 pb-2 pt-1 text-left">Mã hàng</th>
                                 <th className="px-3 pb-2 pt-1 text-left">Tên hàng</th>
                                 <th className="px-3 pb-2 pt-1 text-left">Thương Hiệu</th>
@@ -427,6 +428,13 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                                 return (
                                   <tr key={i} className="text-slate-700 hover:bg-zinc-800/40">
                                     <td className="px-3 py-2 text-center text-slate-400">{i + 1}</td>
+                                    <td className="px-2 py-1.5 text-center">
+                                      {prod?.imageUrl ? (
+                                        <img src={prod.imageUrl} alt={it.productName} className="w-8 h-8 object-cover rounded-md border border-slate-200 mx-auto" />
+                                      ) : (
+                                        <div className="w-8 h-8 rounded-md border border-dashed border-slate-300 bg-slate-50 mx-auto" />
+                                      )}
+                                    </td>
                                     <td className="px-3 py-2 font-mono text-slate-500">{it.sku}</td>
                                     <td className="px-3 py-2 font-medium">{it.productName}</td>
                                     <td className="px-3 py-2 text-slate-500">{prod?.brand || '—'}</td>
@@ -443,7 +451,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                             </tbody>
                             <tfoot>
                               <tr className="border-t-2 border-slate-200 font-bold text-slate-800 bg-slate-50">
-                                <td colSpan={10} className="px-3 pt-2 pb-1 text-right">Tổng cộng:</td>
+                                <td colSpan={11} className="px-3 pt-2 pb-1 text-right">Tổng cộng:</td>
                                 <td className="px-3 pt-2 pb-1 text-right font-mono text-blue-700">{formatVND(o.totalAmount)}</td>
                               </tr>
                             </tfoot>

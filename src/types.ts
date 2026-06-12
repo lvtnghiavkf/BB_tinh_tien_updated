@@ -16,6 +16,7 @@ export interface Product {
   unit: string; // Đơn vị tính (Cái, Chai, Hộp, kg...)
   hidden?: boolean; // Ẩn sản phẩm khỏi màn Bán hàng (không xóa hẳn)
   barcode?: string; // Mã vạch riêng (khác SKU)
+  imageUrl?: string; // URL hình ảnh sản phẩm
 }
 
 export interface CartItem {

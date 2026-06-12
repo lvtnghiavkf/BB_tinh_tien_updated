@@ -338,6 +338,12 @@ export default function Checkout({
                   )}
                 </div>
 
+                {p.imageUrl && (
+                  <div className="w-full h-20 rounded-lg overflow-hidden bg-slate-50 mb-2 flex-shrink-0">
+                    <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                  </div>
+                )}
+
                 <div className="flex-1 space-y-1">
                   <h4 className="font-bold text-slate-800 text-xs sm:text-sm line-clamp-2 leading-tight group-hover:text-blue-600 transition">
                     {p.name}

@@ -57,6 +57,7 @@ export async function fetchProducts(): Promise<Product[]> {
     unit: r.unit,
     hidden: r.hidden ?? false,
     barcode: r.barcode ?? undefined,
+    imageUrl: r.image_url ?? undefined,
   }));
 }
 
@@ -68,8 +69,8 @@ export async function insertProduct(p: Product): Promise<void> {
     stock: p.stock, min_stock: p.minStock, unit: p.unit,
     hidden: p.hidden ?? false,
   };
-  // Only include barcode if the value is explicitly set (column may not exist yet)
   if (p.barcode !== undefined) payload.barcode = p.barcode || null;
+  if (p.imageUrl !== undefined) payload.image_url = p.imageUrl || null;
   const { error } = await supabase.from('products').insert(payload);
   if (error) throw error;
 }
@@ -83,8 +84,8 @@ export async function updateProduct(p: Product): Promise<void> {
     hidden: p.hidden ?? false,
     updated_at: new Date().toISOString(),
   };
-  // Only include barcode if the value is explicitly set (column may not exist yet)
   if (p.barcode !== undefined) payload.barcode = p.barcode || null;
+  if (p.imageUrl !== undefined) payload.image_url = p.imageUrl || null;
   const { error } = await supabase.from('products').update(payload).eq('id', p.id);
   if (error) throw error;
 }
@@ -92,6 +93,17 @@ export async function updateProduct(p: Product): Promise<void> {
 export async function deleteProduct(id: string): Promise<void> {
   const { error } = await supabase.from('products').delete().eq('id', id);
   if (error) throw error;
+}
+
+export async function uploadProductImage(file: File, productId: string): Promise<string> {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const path = `${productId}.${ext}`;
+  const { error } = await supabase.storage
+    .from('product-images')
+    .upload(path, file, { upsert: true, contentType: file.type });
+  if (error) throw error;
+  const { data } = supabase.storage.from('product-images').getPublicUrl(path);
+  return data.publicUrl;
 }
 
 // ── Store Config ──────────────────────────────────────────────────────────────
