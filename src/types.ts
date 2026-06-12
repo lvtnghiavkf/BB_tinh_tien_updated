@@ -15,6 +15,7 @@ export interface Product {
   minStock: number; // Định mức tồn tối thiểu
   unit: string; // Đơn vị tính (Cái, Chai, Hộp, kg...)
   hidden?: boolean; // Ẩn sản phẩm khỏi màn Bán hàng (không xóa hẳn)
+  barcode?: string; // Mã vạch riêng (khác SKU)
 }
 
 export interface CartItem {
@@ -101,6 +102,8 @@ export interface PurchaseOrder {
   totalAmount: number;
   paidAmount: number;
   notes?: string;
+  parentId?: string;    // ID phiếu gốc (nếu là phiếu điều chỉnh)
+  revisionNote?: string; // Ghi chú điều chỉnh tự động
 }
 
 export interface SalaryEntry {

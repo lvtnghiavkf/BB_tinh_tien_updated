@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Partner, PurchaseOrder } from '../types';
-import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine, Download, Upload } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine, Download, Upload, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
@@ -30,7 +30,14 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
   const [payFull, setPayFull] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const xlsxRef = useRef<HTMLInputElement>(null);
+
+  // Tất cả thương hiệu đã có để gợi ý autocomplete
+  const allBrands = useMemo(
+    () => Array.from(new Set(partners.flatMap(p => p.brands).filter(Boolean))).sort(),
+    [partners]
+  );
 
   function exportExcel() {
     const ws = XLSX.utils.json_to_sheet(partners.map(p => ({
@@ -81,7 +88,6 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
     );
   }, [partners, search]);
 
-  // Debt per partner
   const partnerDebt = useMemo(() => {
     const map: Record<string, { total: number; paid: number }> = {};
     purchaseOrders.forEach(o => {
@@ -100,10 +106,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
   }, [debtFor, purchaseOrders]);
 
   function openAdd() {
-    setEditingId(null);
-    setForm({ ...EMPTY, brands: [''], phones: [''], emails: [''] });
-    setErrors({});
-    setShowForm(true);
+    setEditingId(null); setForm({ ...EMPTY, brands: [''], phones: [''], emails: [''] }); setErrors({}); setShowForm(true);
   }
 
   function openEdit(p: Partner) {
@@ -115,8 +118,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
       emails: p.emails.length ? [...p.emails] : [''],
       notes: p.notes ?? '',
     });
-    setErrors({});
-    setShowForm(true);
+    setErrors({}); setShowForm(true);
   }
 
   function cleanArr(arr: string[]) { return arr.map(s => s.trim()).filter(Boolean); }
@@ -147,9 +149,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
 
   function openPay(o: PurchaseOrder) {
     const remaining = o.totalAmount - o.paidAmount;
-    setPayingOrder(o);
-    setPayAmount(String(remaining));
-    setPayFull(false);
+    setPayingOrder(o); setPayAmount(String(remaining)); setPayFull(false);
   }
 
   async function confirmPay() {
@@ -166,7 +166,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
     }
   }
 
-  function dynField(field: keyof Pick<Form, 'brands' | 'phones' | 'emails'>, placeholder: string) {
+  function dynField(field: keyof Pick<Form, 'brands' | 'phones' | 'emails'>, placeholder: string, datalistId?: string) {
     const arr = form[field] as string[];
     return (
       <div className="space-y-1.5">
@@ -175,7 +175,9 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
             <input value={val} onChange={e => {
               const next = [...arr]; next[i] = e.target.value;
               setForm(f => ({ ...f, [field]: next }));
-            }} className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" placeholder={placeholder} />
+            }} list={datalistId}
+              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              placeholder={placeholder} />
             {arr.length > 1 && (
               <button type="button" onClick={() => setForm(f => ({ ...f, [field]: arr.filter((_, j) => j !== i) }))}
                 className="p-2 text-rose-400 hover:text-rose-600 cursor-pointer"><X className="w-4 h-4" /></button>
@@ -192,6 +194,11 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
 
   return (
     <div className="space-y-4">
+      {/* datalist for brand autocomplete */}
+      <datalist id="partner-brand-list">
+        {allBrands.map(b => <option key={b} value={b} />)}
+      </datalist>
+
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
@@ -229,45 +236,67 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                   <th className="px-4 py-3">Điện thoại</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3 text-right">Công nợ còn lại</th>
-                  <th className="px-4 py-3 text-right">Thao tác</th>
+                  <th className="px-4 py-3 w-8"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map(p => {
                   const debt = partnerDebt[p.id] ?? { total: 0, paid: 0 };
                   const remaining = debt.total - debt.paid;
+                  const isExpanded = expandedId === p.id;
                   return (
-                    <tr key={p.id} className="hover:bg-slate-50/50 transition">
-                      <td className="px-4 py-3 font-semibold text-slate-800">{p.fullName}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {p.brands.map(b => <span key={b} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] font-bold rounded-md">{b}</span>)}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 font-mono text-xs">{p.phones[0] || '—'}</td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{p.emails[0] || '—'}</td>
-                      <td className="px-4 py-3 text-right">
-                        {remaining > 0
-                          ? <span className="font-bold font-mono text-rose-600">{formatVND(remaining)}</span>
-                          : <span className="text-slate-400 text-xs">Hết nợ</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => setDebtFor(p)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer" title="Xem công nợ">
-                            <ArrowDownToLine className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => openEdit(p)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer" title="Sửa">
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => setDeleteConfirm(p.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer" title="Xóa">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                    <React.Fragment key={p.id}>
+                      <tr
+                        className={`transition cursor-pointer ${isExpanded ? 'bg-blue-50/30' : 'hover:bg-slate-50/60'}`}
+                        onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                      >
+                        <td className="px-4 py-3 font-semibold text-slate-800">{p.fullName}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {p.brands.map(b => <span key={b} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] font-bold rounded-md">{b}</span>)}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 font-mono text-xs">{p.phones[0] || '—'}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{p.emails[0] || '—'}</td>
+                        <td className="px-4 py-3 text-right">
+                          {remaining > 0
+                            ? <span className="font-bold font-mono text-rose-600">{formatVND(remaining)}</span>
+                            : <span className="text-slate-400 text-xs">Hết nợ</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-blue-500' : ''}`} />
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-blue-50/20">
+                          <td colSpan={6} className="px-4 py-3 border-t border-blue-100">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button onClick={e => { e.stopPropagation(); setDebtFor(p); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                <ArrowDownToLine className="w-3.5 h-3.5" /> Xem công nợ
+                              </button>
+                              <button onClick={e => { e.stopPropagation(); openEdit(p); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
+                              </button>
+                              <button onClick={e => { e.stopPropagation(); setDeleteConfirm(p.id); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                <Trash2 className="w-3.5 h-3.5" /> Xóa
+                              </button>
+                              {p.phones.length > 1 && (
+                                <span className="text-xs text-slate-500 ml-2">SĐT: {p.phones.join(' · ')}</span>
+                              )}
+                              {p.emails.length > 0 && p.emails[0] && (
+                                <span className="text-xs text-slate-500">Email: {p.emails.join(' · ')}</span>
+                              )}
+                              {p.notes && (
+                                <span className="text-xs text-slate-400 italic ml-2">{p.notes}</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -296,7 +325,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-600 mb-1 flex items-center gap-1"><Tag className="w-3.5 h-3.5" /> Thương hiệu</label>
-                  {dynField('brands', 'VD: Coca-Cola, Hảo Hảo...')}
+                  {dynField('brands', 'VD: Coca-Cola, Hảo Hảo...', 'partner-brand-list')}
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-600 mb-1 flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> Điện thoại</label>
@@ -359,8 +388,6 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                 </div>
                 <button onClick={() => setDebtFor(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
-
-              {/* Summary */}
               {(() => {
                 const debt = partnerDebt[debtFor.id] ?? { total: 0, paid: 0 };
                 const remaining = debt.total - debt.paid;
@@ -381,8 +408,6 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                   </div>
                 );
               })()}
-
-              {/* Orders list */}
               <div className="flex-1 overflow-y-auto p-5 space-y-3">
                 {partnerOrders.length === 0 ? (
                   <div className="text-center py-10 text-slate-400 text-sm">Chưa có phiếu nhập hàng nào.</div>
@@ -435,18 +460,9 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
               <h3 className="font-bold text-slate-800 mb-1">Thanh toán phiếu nhập</h3>
               <p className="text-xs text-slate-500 font-mono mb-4">{payingOrder.id}</p>
               <div className="space-y-3 mb-5">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Tổng phiếu:</span>
-                  <span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Đã trả:</span>
-                  <span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Còn nợ:</span>
-                  <span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span>
-                </div>
+                <div className="flex justify-between text-sm"><span className="text-slate-600">Tổng phiếu:</span><span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-600">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-slate-600">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
                 <div className="border-t border-slate-200 pt-3 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={payFull} onChange={e => {

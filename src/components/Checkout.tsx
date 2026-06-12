@@ -71,7 +71,8 @@ export default function Checkout({
 
     const product = products.find(
       (p) => p.sku.toLowerCase() === code.toLowerCase() ||
-             p.name.toLowerCase() === code.toLowerCase()
+             p.name.toLowerCase() === code.toLowerCase() ||
+             (p.barcode && p.barcode.toLowerCase() === code.toLowerCase())
     );
 
     if (!product) {
@@ -313,8 +314,7 @@ export default function Checkout({
             const inCartItem = cart.find((item) => item.product.id === p.id);
             const inCartQty = inCartItem?.quantity || 0;
             const isLowStock = p.stock > 0 && p.stock <= p.minStock;
-            const isOutOfStock = p.stock === 0;
-            const isNegativeStock = p.stock < 0;
+            const isOutOfStock = p.stock <= 0;
 
             return (
               <motion.div
@@ -353,9 +353,7 @@ export default function Checkout({
                     </p>
                   </div>
                   <div className="text-right">
-                    {isNegativeStock ? (
-                      <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">Tồn: {p.stock}</span>
-                    ) : isOutOfStock ? (
+                    {isOutOfStock ? (
                       <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded uppercase">Hết kho</span>
                     ) : isLowStock ? (
                       <span className="text-[9px] font-bold text-amber-650 bg-amber-50 px-1.5 py-0.5 rounded">Tồn: {p.stock}</span>
@@ -428,7 +426,7 @@ export default function Checkout({
                           const v = parseFloat(e.target.value.replace(',', '.'));
                           if (!isNaN(v) && v > 0) setCartQty(item.product.id, v);
                         }}
-                        className={`text-center font-bold text-xs font-mono bg-transparent border-0 focus:outline-none focus:ring-0 p-0 ${isWeightUnit(item.product.unit) ? 'w-16' : 'w-7'}`}
+                        className="text-center font-bold text-xs font-mono bg-transparent border-0 focus:outline-none focus:ring-0 p-0 w-16"
                       />
                       <button
                         type="button"

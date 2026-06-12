@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Customer, Invoice } from '../types';
-import { Plus, Pencil, Trash2, Search, X, User, Calendar, ShoppingBag, Download, Upload } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, User, Calendar, ShoppingBag, Download, Upload, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
@@ -15,7 +15,6 @@ interface CustomersProps {
 const EMPTY_FORM = { fullName: '', phone: '', email: '', birthDate: '', notes: '' };
 
 function toDateStr(d: Date) { return d.toISOString().slice(0, 10); }
-function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
 const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
 
@@ -28,6 +27,7 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const xlsxRef = useRef<HTMLInputElement>(null);
 
   function exportExcel() {
@@ -64,7 +64,6 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
     e.target.value = '';
   }
 
-  // History date range
   const today = new Date();
   const [historyFrom, setHistoryFrom] = useState(toDateStr(new Date(today.getFullYear(), today.getMonth(), 1)));
   const [historyTo, setHistoryTo] = useState(toDateStr(today));
@@ -96,17 +95,19 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
   }, [historyInvoices]);
 
   function openAdd() {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-    setErrors({});
-    setShowForm(true);
+    setEditingId(null); setForm(EMPTY_FORM); setErrors({}); setShowForm(true);
   }
 
   function openEdit(c: Customer) {
     setEditingId(c.id);
     setForm({ fullName: c.fullName, phone: c.phone, email: c.email ?? '', birthDate: c.birthDate ?? '', notes: c.notes ?? '' });
-    setErrors({});
-    setShowForm(true);
+    setErrors({}); setShowForm(true);
+  }
+
+  function openHistory(c: Customer) {
+    setHistoryFor(c);
+    setHistoryFrom(toDateStr(new Date(today.getFullYear(), today.getMonth(), 1)));
+    setHistoryTo(toDateStr(today));
   }
 
   function validate() {
@@ -139,11 +140,9 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
+          <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Tìm tên, SĐT, email..."
-            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-          />
+            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
         </div>
         <input ref={xlsxRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportExcel} />
         <button onClick={() => xlsxRef.current?.click()}
@@ -177,34 +176,46 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                   <th className="px-4 py-3">Ngày sinh</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Ghi chú</th>
-                  <th className="px-4 py-3 text-right">Thao tác</th>
+                  <th className="px-4 py-3 w-8"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map(c => (
-                  <tr key={c.id} className="hover:bg-slate-50/50 transition">
-                    <td className="px-4 py-3 font-semibold text-slate-800">{c.fullName}</td>
-                    <td className="px-4 py-3 font-mono text-slate-600">{c.phone}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{c.birthDate ? new Date(c.birthDate + 'T00:00:00').toLocaleDateString('vi-VN') : '—'}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{c.email || '—'}</td>
-                    <td className="px-4 py-3 text-slate-400 text-xs max-w-[150px] truncate">{c.notes || '—'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => { setHistoryFor(c); setHistoryFrom(toDateStr(new Date(today.getFullYear(), today.getMonth(), 1))); setHistoryTo(toDateStr(today)); }}
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer" title="Lịch sử mua hàng">
-                          <ShoppingBag className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => openEdit(c)}
-                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer" title="Sửa">
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => setDeleteConfirm(c.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer" title="Xóa">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                  <React.Fragment key={c.id}>
+                    <tr
+                      className={`transition cursor-pointer ${expandedId === c.id ? 'bg-blue-50/30' : 'hover:bg-slate-50/60'}`}
+                      onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
+                    >
+                      <td className="px-4 py-3 font-semibold text-slate-800">{c.fullName}</td>
+                      <td className="px-4 py-3 font-mono text-slate-600">{c.phone}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{c.birthDate ? new Date(c.birthDate + 'T00:00:00').toLocaleDateString('vi-VN') : '—'}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{c.email || '—'}</td>
+                      <td className="px-4 py-3 text-slate-400 text-xs max-w-[150px] truncate">{c.notes || '—'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${expandedId === c.id ? 'rotate-180 text-blue-500' : ''}`} />
+                      </td>
+                    </tr>
+                    {expandedId === c.id && (
+                      <tr className="bg-blue-50/20">
+                        <td colSpan={6} className="px-4 py-3 border-t border-blue-100">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button onClick={e => { e.stopPropagation(); openHistory(c); }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                              <ShoppingBag className="w-3.5 h-3.5" /> Lịch sử mua hàng
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); openEdit(c); }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                              <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
+                            </button>
+                            <button onClick={e => { e.stopPropagation(); setDeleteConfirm(c.id); }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                              <Trash2 className="w-3.5 h-3.5" /> Xóa
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -303,8 +314,6 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                 </div>
                 <button onClick={() => setHistoryFor(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
-
-              {/* Range filter */}
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex flex-wrap items-center gap-3">
                 <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
                 <span className="text-xs font-bold text-slate-600">Từ ngày:</span>
@@ -314,8 +323,6 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                 <input type="date" value={historyTo} min={historyFrom} max={toDateStr(today)} onChange={e => setHistoryTo(e.target.value)}
                   className="px-2 py-1 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-blue-500" />
               </div>
-
-              {/* Summary */}
               <div className="px-5 py-3 border-b border-slate-100 flex gap-6 flex-wrap">
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase">Tổng chi tiêu</p>
@@ -330,8 +337,6 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                   <p className="text-lg font-extrabold text-slate-800">{historyStats.totalItems}</p>
                 </div>
               </div>
-
-              {/* Invoice list */}
               <div className="flex-1 overflow-y-auto p-5 space-y-3">
                 {historyInvoices.length === 0 ? (
                   <div className="text-center py-10 text-slate-400 text-sm">Không có đơn hàng trong khoảng thời gian này.</div>

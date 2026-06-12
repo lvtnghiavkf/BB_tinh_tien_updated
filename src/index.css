@@ -7,6 +7,8 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+html { font-size: 14px; }
+
 /* Print Styles */
 @media print {
   /* Hide every element on the page */

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Product, Partner, PurchaseOrder, PurchaseOrderItem } from '../types';
-import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, ChevronsUpDown, Search, Download } from 'lucide-react';
+import { Product, Partner, PurchaseOrder } from '../types';
+import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, ChevronsUpDown, Search, Download, ChevronDown, GitBranch } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
@@ -17,7 +17,6 @@ interface PurchaseOrdersProps {
 const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
 
 type OrderType = 'all' | 'import' | 'export';
-
 type DraftItem = { productId: string; productName: string; sku: string; quantity: number; unitCost: number };
 
 export default function PurchaseOrders({ products, partners, orders, onAdd, onUpdate, onDelete, onUpdateProductsStock }: PurchaseOrdersProps) {
@@ -31,7 +30,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Create form state
+  // Create / revise form state
   const [draftType, setDraftType] = useState<'import' | 'export'>('import');
   const [draftPartnerId, setDraftPartnerId] = useState('');
   const [partnerSearch, setPartnerSearch] = useState('');
@@ -39,6 +38,10 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0, 16));
   const [draftNotes, setDraftNotes] = useState('');
   const [draftItems, setDraftItems] = useState<DraftItem[]>([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }]);
+
+  // Revision system state
+  const [revisingOrder, setRevisingOrder] = useState<PurchaseOrder | null>(null);
+  const [reviseNotes, setReviseNotes] = useState('');
 
   const partnerDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -68,6 +71,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
           'Đơn giá': it.unitCost, 'Thành tiền': it.unitCost * it.quantity,
           'Tổng phiếu': o.totalAmount, 'Đã trả': o.paidAmount,
           'Còn nợ': o.totalAmount - o.paidAmount, 'Ghi chú': o.notes ?? '',
+          'Phiếu gốc': o.parentId ?? '', 'Ghi chú điều chỉnh': o.revisionNote ?? '',
         });
       });
     });
@@ -85,6 +89,28 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     });
   }, [orders, typeFilter, partnerFilter]);
 
+  // Group: root orders with their revisions displayed right after
+  const ordersWithRevisions = useMemo(() => {
+    const revisionMap = new Map<string, PurchaseOrder[]>();
+    const roots: PurchaseOrder[] = [];
+    filtered.forEach(o => {
+      if (o.parentId) {
+        const arr = revisionMap.get(o.parentId) ?? [];
+        arr.push(o);
+        revisionMap.set(o.parentId, arr);
+      } else {
+        roots.push(o);
+      }
+    });
+    const result: Array<{ order: PurchaseOrder; isRevision: boolean }> = [];
+    roots.forEach(root => {
+      result.push({ order: root, isRevision: false });
+      const revs = (revisionMap.get(root.id) ?? []).sort((a, b) => a.id.localeCompare(b.id));
+      revs.forEach(r => result.push({ order: r, isRevision: true }));
+    });
+    return result;
+  }, [filtered]);
+
   const draftTotal = useMemo(() =>
     draftItems.reduce((s, it) => s + it.quantity * it.unitCost, 0), [draftItems]);
 
@@ -96,6 +122,32 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     setDraftDate(new Date().toISOString().slice(0, 16));
     setDraftNotes('');
     setDraftItems([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }]);
+    setRevisingOrder(null);
+    setReviseNotes('');
+  }
+
+  function openRevise(o: PurchaseOrder) {
+    setRevisingOrder(o);
+    setDraftType(o.type);
+    const partner = partners.find(p => p.id === o.partnerId);
+    if (partner) {
+      setDraftPartnerId(partner.id);
+      setPartnerSearch(`${partner.fullName}${partner.brands.length ? ' — ' + partner.brands.join(', ') : ''}`);
+    } else {
+      setDraftPartnerId(o.partnerId);
+      setPartnerSearch(o.partnerName);
+    }
+    setDraftDate(new Date().toISOString().slice(0, 16));
+    setDraftNotes(o.notes ?? '');
+    setDraftItems(o.items.map(it => ({
+      productId: it.productId,
+      productName: it.productName,
+      sku: it.sku,
+      quantity: it.quantity,
+      unitCost: it.unitCost,
+    })));
+    setReviseNotes('');
+    setShowCreate(true);
   }
 
   function setItemProduct(idx: number, productId: string) {
@@ -113,17 +165,38 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     const validItems = draftItems.filter(it => it.productId && it.quantity > 0);
     if (validItems.length === 0) return;
     const partner = partners.find(p => p.id === draftPartnerId);
+
+    let newOrderId: string;
+    let parentId: string | undefined;
+    let revisionNote: string | undefined;
+
+    if (revisingOrder) {
+      // Root ID is either the parent of the revising order, or the order itself
+      const rootId = revisingOrder.parentId || revisingOrder.id;
+      const revCount = orders.filter(o => o.parentId === rootId).length;
+      newOrderId = `${rootId}.${revCount + 1}`;
+      parentId = rootId;
+      const noteLines = [`Điều chỉnh từ phiếu ${revisingOrder.id}`];
+      if (reviseNotes.trim()) noteLines.push(reviseNotes.trim());
+      revisionNote = noteLines.join(' — ');
+    } else {
+      newOrderId = `PO${Date.now()}`;
+    }
+
     const order: PurchaseOrder = {
-      id: `PO${Date.now()}`,
+      id: newOrderId,
       type: draftType,
       partnerId: draftPartnerId,
-      partnerName: partner?.fullName ?? '',
+      partnerName: partner?.fullName ?? (revisingOrder?.partnerName ?? ''),
       timestamp: new Date(draftDate).toISOString(),
       items: validItems.map(it => ({ productId: it.productId, productName: it.productName, sku: it.sku, quantity: it.quantity, unitCost: it.unitCost })),
       totalAmount: validItems.reduce((s, it) => s + it.quantity * it.unitCost, 0),
       paidAmount: 0,
       notes: draftNotes.trim() || undefined,
+      parentId,
+      revisionNote,
     };
+
     setSaving(true);
     try {
       await onAdd(order);
@@ -186,31 +259,36 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
 
       {/* List */}
       <div className="space-y-3">
-        {filtered.length === 0 ? (
+        {ordersWithRevisions.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
             <ChevronsUpDown className="w-10 h-10 mx-auto stroke-1 mb-2 text-slate-300" />
             <p className="text-sm font-semibold">Chưa có phiếu nào</p>
           </div>
-        ) : filtered.map(o => {
+        ) : ordersWithRevisions.map(({ order: o, isRevision }) => {
           const remaining = o.totalAmount - o.paidAmount;
           const isOpen = expandedId === o.id;
           return (
-            <div key={o.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div key={o.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${isRevision ? 'ml-6 border-amber-200' : 'border-slate-200'}`}>
               <div
                 className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 cursor-pointer hover:bg-slate-50/60 transition"
                 onClick={() => setExpandedId(isOpen ? null : o.id)}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${o.type === 'import' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
-                    {o.type === 'import' ? <ArrowDownToLine className="w-4 h-4" /> : <ArrowUpFromLine className="w-4 h-4" />}
+                  <div className={`p-2 rounded-lg ${isRevision ? 'bg-amber-50 text-amber-600' : o.type === 'import' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                    {isRevision ? <GitBranch className="w-4 h-4" /> : o.type === 'import' ? <ArrowDownToLine className="w-4 h-4" /> : <ArrowUpFromLine className="w-4 h-4" />}
                   </div>
                   <div>
-                    <p className="font-bold text-sm text-slate-800">{o.type === 'import' ? 'Phiếu nhập hàng' : 'Phiếu xuất hàng'}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-sm text-slate-800">
+                        {isRevision ? 'Phiếu điều chỉnh' : o.type === 'import' ? 'Phiếu nhập hàng' : 'Phiếu xuất hàng'}
+                      </p>
+                      {isRevision && <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded">Điều chỉnh</span>}
+                    </div>
                     <p className="text-xs text-slate-500 font-mono">{o.id} · {new Date(o.timestamp).toLocaleDateString('vi-VN')}</p>
                     {o.partnerName && <p className="text-xs text-slate-500">{o.partnerName}</p>}
                   </div>
                 </div>
-                <div className="flex items-center gap-4 text-right shrink-0">
+                <div className="flex items-center gap-3 text-right shrink-0">
                   <div>
                     <p className="font-mono font-bold text-slate-800">{formatVND(o.totalAmount)}</p>
                     {o.type === 'import' && (
@@ -219,18 +297,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-1">
-                    {o.type === 'import' && remaining > 0 && (
-                      <button onClick={e => { e.stopPropagation(); openPay(o); }}
-                        className="px-2 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-md text-xs font-bold cursor-pointer transition">
-                        Trả nợ
-                      </button>
-                    )}
-                    <button onClick={e => { e.stopPropagation(); setDeleteConfirm(o.id); }}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-blue-500' : ''}`} />
                 </div>
               </div>
 
@@ -239,6 +306,12 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden">
                     <div className="px-4 pb-4 border-t border-slate-100">
+                      {o.revisionNote && (
+                        <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                          <GitBranch className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                          <span>{o.revisionNote}</span>
+                        </div>
+                      )}
                       <table className="w-full text-xs mt-3">
                         <thead>
                           <tr className="text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100">
@@ -266,6 +339,24 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                         </tfoot>
                       </table>
                       {o.notes && <p className="text-xs text-slate-400 mt-2 italic">{o.notes}</p>}
+
+                      {/* Action buttons */}
+                      <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
+                        {o.type === 'import' && remaining > 0 && (
+                          <button onClick={e => { e.stopPropagation(); openPay(o); }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                            Trả nợ
+                          </button>
+                        )}
+                        <button onClick={e => { e.stopPropagation(); openRevise(o); }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                          <GitBranch className="w-3.5 h-3.5" /> Điều chỉnh phiếu
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); setDeleteConfirm(o.id); }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                          <Trash2 className="w-3.5 h-3.5" /> Xóa
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -275,18 +366,37 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
         })}
       </div>
 
-      {/* Create Modal */}
+      {/* Create / Revise Modal */}
       <AnimatePresence>
         {showCreate && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
               className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-4">
-              <div className="flex items-center justify-between p-5 border-b border-slate-200">
-                <h3 className="font-bold text-slate-800">Tạo phiếu xuất nhập hàng</h3>
-                <button onClick={() => setShowCreate(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
+              <div className={`flex items-center justify-between p-5 border-b ${revisingOrder ? 'bg-amber-50 border-amber-200' : 'border-slate-200'}`}>
+                <div>
+                  <h3 className="font-bold text-slate-800">
+                    {revisingOrder ? `Điều chỉnh phiếu ${revisingOrder.id}` : 'Tạo phiếu xuất nhập hàng'}
+                  </h3>
+                  {revisingOrder && (
+                    <p className="text-xs text-amber-700 mt-0.5">Phiếu gốc sẽ được giữ nguyên. Phiếu điều chỉnh mới sẽ được tạo.</p>
+                  )}
+                </div>
+                <button onClick={() => { setShowCreate(false); resetCreate(); }} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
 
               <div className="p-5 space-y-5 overflow-y-auto max-h-[70vh]">
+                {/* Revise notes (only when revising) */}
+                {revisingOrder && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                    <label className="text-xs font-bold text-amber-800 mb-1.5 block flex items-center gap-1">
+                      <GitBranch className="w-3.5 h-3.5" /> Lý do điều chỉnh
+                    </label>
+                    <input value={reviseNotes} onChange={e => setReviseNotes(e.target.value)}
+                      className="w-full px-3 py-2 border border-amber-200 bg-white rounded-lg text-sm focus:outline-none focus:border-amber-500"
+                      placeholder="VD: Cập nhật số lượng thực nhận, sửa đơn giá..." />
+                  </div>
+                )}
+
                 {/* Type & Partner */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -402,16 +512,18 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                 {draftType === 'import' && (
                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700 flex items-center gap-2">
                     <ArrowDownToLine className="w-4 h-4 shrink-0" />
-                    Phiếu nhập hàng sẽ tự động cộng vào tồn kho sau khi tạo.
+                    {revisingOrder
+                      ? 'Phiếu điều chỉnh nhập hàng sẽ cộng thêm vào tồn kho sau khi tạo.'
+                      : 'Phiếu nhập hàng sẽ tự động cộng vào tồn kho sau khi tạo.'}
                   </div>
                 )}
               </div>
 
               <div className="flex gap-3 p-5 border-t border-slate-200">
-                <button onClick={() => setShowCreate(false)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold transition cursor-pointer">Hủy</button>
+                <button onClick={() => { setShowCreate(false); resetCreate(); }} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold transition cursor-pointer">Hủy</button>
                 <button onClick={handleCreate} disabled={saving || (draftItems.filter(it => it.productId).length === 0)}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer">
-                  {saving ? 'Đang lưu...' : 'Tạo phiếu'}
+                  className={`flex-1 px-4 py-2 disabled:opacity-60 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer ${revisingOrder ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                  {saving ? 'Đang lưu...' : revisingOrder ? 'Tạo phiếu điều chỉnh' : 'Tạo phiếu'}
                 </button>
               </div>
             </motion.div>

@@ -22,17 +22,19 @@ create table if not exists public.products (
   min_stock     numeric(10,3) not null default 0,  -- Định mức tồn tối thiểu
   unit          text not null default 'Cái',
   hidden        boolean not null default false, -- Ẩn khỏi màn Bán hàng
+  barcode       text,                           -- Mã vạch riêng (khác SKU)
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
 
 -- Nếu bạn ĐÃ chạy bản schema cũ trước đây, chạy các dòng này để
 -- nâng cấp bảng (an toàn, không mất dữ liệu):
-alter table public.products add column if not exists brand  text    not null default '';
-alter table public.products add column if not exists hidden boolean not null default false;
+alter table public.products add column if not exists brand   text    not null default '';
+alter table public.products add column if not exists hidden  boolean not null default false;
+alter table public.products add column if not exists barcode text;
 alter table public.products alter column stock     type numeric(10,3) using stock::numeric;
 alter table public.products alter column min_stock type numeric(10,3) using min_stock::numeric;
-alter table public.invoice_items       alter column quantity type numeric(10,3) using quantity::numeric;
+alter table public.invoice_items        alter column quantity type numeric(10,3) using quantity::numeric;
 alter table public.purchase_order_items alter column quantity type numeric(10,3) using quantity::numeric;
 
 
@@ -135,9 +137,11 @@ create table if not exists public.purchase_orders (
   partner_name text,
   timestamp    timestamptz not null default now(),
   total_amount bigint not null default 0,
-  paid_amount  bigint not null default 0,
-  notes        text,
-  created_at   timestamptz not null default now()
+  paid_amount   bigint not null default 0,
+  notes         text,
+  parent_id     text references public.purchase_orders(id) on delete set null, -- Phiếu gốc (nếu là bản điều chỉnh)
+  revision_note text,                                                           -- Ghi chú thay đổi so với phiếu gốc
+  created_at    timestamptz not null default now()
 );
 
 -- ── Bảng 8: Chi tiết từng dòng phiếu nhập/xuất ───────────────
@@ -176,6 +180,10 @@ alter table public.salary_entries       enable row level security;
 
 create policy "public_all_customers"    on public.customers            for all using (true) with check (true);
 create policy "public_all_partners"     on public.partners             for all using (true) with check (true);
+-- Nếu đã chạy schema cũ, thêm cột mới vào purchase_orders:
+alter table public.purchase_orders add column if not exists parent_id     text references public.purchase_orders(id) on delete set null;
+alter table public.purchase_orders add column if not exists revision_note text;
+
 create policy "public_all_po"           on public.purchase_orders      for all using (true) with check (true);
 create policy "public_all_poi"          on public.purchase_order_items for all using (true) with check (true);
 create policy "public_all_salary"       on public.salary_entries       for all using (true) with check (true);

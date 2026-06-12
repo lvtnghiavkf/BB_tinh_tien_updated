@@ -21,6 +21,7 @@ export async function fetchProducts(): Promise<Product[]> {
     minStock: r.min_stock,
     unit: r.unit,
     hidden: r.hidden ?? false,
+    barcode: r.barcode ?? undefined,
   }));
 }
 
@@ -37,6 +38,7 @@ export async function insertProduct(p: Product): Promise<void> {
     min_stock: p.minStock,
     unit: p.unit,
     hidden: p.hidden ?? false,
+    barcode: p.barcode ?? null,
   });
   if (error) throw error;
 }
@@ -55,6 +57,7 @@ export async function updateProduct(p: Product): Promise<void> {
       min_stock: p.minStock,
       unit: p.unit,
       hidden: p.hidden ?? false,
+      barcode: p.barcode ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', p.id);
@@ -272,6 +275,8 @@ export async function fetchPurchaseOrders(): Promise<PurchaseOrder[]> {
     totalAmount: r.total_amount,
     paidAmount: r.paid_amount,
     notes: r.notes ?? undefined,
+    parentId: r.parent_id ?? undefined,
+    revisionNote: r.revision_note ?? undefined,
   }));
 }
 
@@ -285,6 +290,8 @@ export async function insertPurchaseOrder(o: PurchaseOrder): Promise<void> {
     total_amount: o.totalAmount,
     paid_amount: o.paidAmount,
     notes: o.notes ?? null,
+    parent_id: o.parentId ?? null,
+    revision_note: o.revisionNote ?? null,
   });
   if (oErr) throw oErr;
 
