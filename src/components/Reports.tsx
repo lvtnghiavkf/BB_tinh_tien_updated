@@ -94,6 +94,8 @@ export default function Reports({ invoices, products, isManager = false, onSelec
   const [salaryPayError, setSalaryPayError] = useState('');
   const [salaryPayConfirmed, setSalaryPayConfirmed] = useState(false);
   const [paymentLogs, setPaymentLogs] = useState<PaymentLog[]>([]);
+  const [showDebtPaidHistory, setShowDebtPaidHistory] = useState(false);
+  const [showSalaryPaidHistory, setShowSalaryPaidHistory] = useState(false);
   const xlsxInputRef = useRef<HTMLInputElement>(null);
 
   // Date range
@@ -259,6 +261,11 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     return salaryEntries.filter(e => e.fullName.toLowerCase().includes(q) || e.phone.includes(q));
   }, [salaryEntries, salarySearch]);
 
+  const salaryTotalOwed = useMemo(() => salaryEntries.reduce((s, e) => s + e.amount, 0), [salaryEntries]);
+  const salaryTotalPaid = useMemo(() => salaryEntries.reduce((s, e) => s + (e.paidAmount ?? 0), 0), [salaryEntries]);
+  const salaryTotalRemaining = salaryTotalOwed - salaryTotalPaid;
+  const salaryUnpaidCount = useMemo(() => salaryEntries.filter(e => (e.amount - (e.paidAmount ?? 0)) > 0).length, [salaryEntries]);
+
   const salaryTotalByName = useMemo(() => {
     const map: Record<string, number> = {};
     salaryEntries.forEach(e => { map[e.fullName] = (map[e.fullName] || 0) + e.amount; });
@@ -372,6 +379,52 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     XLSX.writeFile(wb, `luong_${toDateStr(new Date())}.xlsx`);
   }
 
+  function downloadDebtPaymentTemplate() {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['STT', 'Thời gian thanh toán', 'Đối tác', 'Thương hiệu', 'Phiếu nhập hàng', 'Số tiền', 'Thanh toán', 'Ghi chú'],
+      [1, '2026-06-13', 'Tên đối tác', 'Thương hiệu', 'PN001', 1000000, 'Tiền mặt', ''],
+    ]);
+    XLSX.utils.book_append_sheet(wb, ws, 'Mẫu công nợ');
+    XLSX.writeFile(wb, 'mau_thanh_toan_cong_no.xlsx');
+  }
+
+  function exportDebtPaymentHistory() {
+    const logs = paymentLogs.filter(l => l.type === 'debt');
+    const data = logs.map((log, i) => ({
+      'STT': i + 1, 'Thời gian thanh toán': new Date(log.createdAt).toLocaleString('vi-VN'),
+      'Đối tác': log.referenceName, 'Phiếu nhập hàng': log.referenceId,
+      'Số tiền': log.amount, 'Thanh toán': log.paymentMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt',
+      'Còn nợ': log.remaining, 'Ghi chú': log.notes ?? '',
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Lịch sử công nợ');
+    XLSX.writeFile(wb, `lich_su_cong_no_${toDateStr(new Date())}.xlsx`);
+  }
+
+  function downloadSalaryPaymentTemplate() {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['STT', 'Thời gian thanh toán', 'Họ và tên', 'Thời gian làm việc', 'Cách tính', 'Số lượng', 'Đơn giá', 'Thành tiền', 'Thanh toán', 'Ghi chú'],
+      [1, '2026-06-13', 'Nguyễn Văn A', '01/06-30/06/2026', 'Đợt', 1, 5000000, 5000000, 'Chuyển khoản', ''],
+    ]);
+    XLSX.utils.book_append_sheet(wb, ws, 'Mẫu lương');
+    XLSX.writeFile(wb, 'mau_tra_luong.xlsx');
+  }
+
+  function exportSalaryPaymentHistory() {
+    const logs = paymentLogs.filter(l => l.type === 'salary');
+    const data = logs.map((log, i) => ({
+      'STT': i + 1, 'Thời gian thanh toán': new Date(log.createdAt).toLocaleString('vi-VN'),
+      'Họ và tên': log.referenceName, 'Số tiền': log.amount,
+      'Thanh toán': log.paymentMethod === 'bank' ? 'Chuyển khoản' : 'Tiền mặt',
+      'Còn nợ lương': log.remaining, 'Ghi chú': log.notes ?? '',
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Lịch sử lương');
+    XLSX.writeFile(wb, `lich_su_luong_${toDateStr(new Date())}.xlsx`);
+  }
+
   function handleImportExcel(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
@@ -403,13 +456,13 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       {/* Header + Report type tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">Báo cáo</h1>
-          <p className="text-slate-500 text-sm mt-1">Doanh thu, công nợ và lợi nhuận theo kỳ.</p>
+          <h1 className="text-2xl font-extrabold text-zinc-100 tracking-tight">Báo cáo</h1>
+          <p className="text-zinc-400 text-sm mt-1">Doanh thu, công nợ và lợi nhuận theo kỳ.</p>
         </div>
-        <div className="flex border border-slate-200 rounded-xl bg-white p-1 shadow-xs w-full sm:w-auto">
+        <div className="flex border border-zinc-700 rounded-xl bg-zinc-800 p-1 shadow-xs w-full sm:w-auto">
           {([['revenue', <TrendingUp className="w-3.5 h-3.5" />, 'Doanh thu'], ['debt', <ArrowDownToLine className="w-3.5 h-3.5" />, 'Công nợ'], ['salary', <Users className="w-3.5 h-3.5" />, 'Lương'], ...(isManager ? [['profit', <Wallet className="w-3.5 h-3.5" />, 'Lợi nhuận']] : [])] as [ReportType, React.ReactNode, string][]).map(([id, icon, label]) => (
             <button key={id} onClick={() => setReportType(id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer whitespace-nowrap ${reportType === id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer whitespace-nowrap ${reportType === id ? 'bg-blue-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-100'}`}>
               {icon} {label}
             </button>
           ))}
@@ -417,31 +470,31 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       </div>
 
       {/* Date Range Filter (shared) */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+      <div className="bg-zinc-800/50 p-4 rounded-xl border border-zinc-700 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5">
             <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
-            <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Khoảng thời gian:</span>
+            <span className="text-xs font-bold text-zinc-300 whitespace-nowrap">Khoảng thời gian:</span>
           </div>
-          <div className="flex gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200">
+          <div className="flex gap-1 bg-zinc-900 rounded-lg p-1 border border-zinc-700">
             {(['today', '7days', '30days', 'custom'] as RangePreset[]).map(p => (
               <button key={p} onClick={() => setRangePreset(p)}
-                className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${rangePreset === p ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}>
+                className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${rangePreset === p ? 'bg-blue-600 text-white shadow-xs' : 'text-zinc-400 hover:text-zinc-100'}`}>
                 {presetLabel[p]}
               </button>
             ))}
           </div>
           {rangePreset === 'custom' && (
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Từ ngày:</span>
+              <span className="text-xs text-zinc-400 font-medium whitespace-nowrap">Từ ngày:</span>
               <input type="date" value={customFrom} max={customTo} onChange={e => setCustomFrom(e.target.value)}
-                className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-blue-500 cursor-pointer" />
-              <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Đến ngày:</span>
+                className="px-2 py-1 border border-zinc-700 rounded-lg text-xs font-medium focus:outline-none focus:border-blue-500 cursor-pointer" />
+              <span className="text-xs text-zinc-400 font-medium whitespace-nowrap">Đến ngày:</span>
               <input type="date" value={customTo} min={customFrom} max={toDateStr(new Date())} onChange={e => setCustomTo(e.target.value)}
-                className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-blue-500 cursor-pointer" />
+                className="px-2 py-1 border border-zinc-700 rounded-lg text-xs font-medium focus:outline-none focus:border-blue-500 cursor-pointer" />
             </div>
           )}
-          <p className="text-[11px] text-slate-400 ml-auto whitespace-nowrap">
+          <p className="text-[11px] text-zinc-500 ml-auto whitespace-nowrap">
             {rangePreset !== 'custom' ? `${dateFrom.toLocaleDateString('vi-VN')} — ${dateTo.toLocaleDateString('vi-VN')}` : `${new Date(customFrom + 'T00:00:00').toLocaleDateString('vi-VN')} — ${new Date(customTo + 'T00:00:00').toLocaleDateString('vi-VN')}`}
           </p>
         </div>
@@ -454,31 +507,31 @@ export default function Reports({ invoices, products, isManager = false, onSelec
             {true ? (
               <motion.div key="kpi-tab" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-                    <div className="space-y-1"><p className="text-xs font-bold text-slate-400 tracking-wider uppercase">DOANH THU</p><p className="text-xl font-extrabold text-blue-600 font-mono">{formatVND(stats.revenue)}</p><p className="text-[10px] text-slate-400">{stats.transactions} giao dịch</p></div>
-                    <div className="p-3.5 bg-blue-50 text-blue-600 rounded-xl"><CircleDollarSign className="w-6 h-6" /></div>
+                  <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
+                    <div className="space-y-1"><p className="text-xs font-bold text-zinc-500 tracking-wider uppercase">DOANH THU</p><p className="text-xl font-extrabold text-blue-600 font-mono">{formatVND(stats.revenue)}</p><p className="text-[10px] text-zinc-500">{stats.transactions} giao dịch</p></div>
+                    <div className="p-3.5 bg-blue-900/30 text-blue-400 rounded-xl"><CircleDollarSign className="w-6 h-6" /></div>
                   </div>
                   {isManager && (
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-                      <div className="space-y-1"><p className="text-xs font-bold text-slate-400 tracking-wider uppercase">LỢI NHUẬN GỘP</p><p className="text-xl font-extrabold text-emerald-600 font-mono">{formatVND(stats.profit)}</p><p className="text-[10px] text-slate-400">Đã trừ vốn nhập gốc</p></div>
-                      <div className="p-3.5 bg-emerald-50 text-emerald-600 rounded-xl"><TrendingUp className="w-6 h-6" /></div>
+                    <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
+                      <div className="space-y-1"><p className="text-xs font-bold text-zinc-500 tracking-wider uppercase">LỢI NHUẬN GỘP</p><p className="text-xl font-extrabold text-emerald-600 font-mono">{formatVND(stats.profit)}</p><p className="text-[10px] text-zinc-500">Đã trừ vốn nhập gốc</p></div>
+                      <div className="p-3.5 bg-emerald-900/30 text-emerald-400 rounded-xl"><TrendingUp className="w-6 h-6" /></div>
                     </div>
                   )}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-                    <div className="space-y-1"><p className="text-xs font-bold text-slate-400 tracking-wider uppercase">SỐ HÓA ĐƠN</p><p className="text-2xl font-extrabold text-slate-800 font-mono">{stats.transactions}</p><p className="text-[10px] text-slate-400">Giao dịch thành công</p></div>
-                    <div className="p-3.5 bg-slate-100 text-slate-600 rounded-xl"><Receipt className="w-6 h-6" /></div>
+                  <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
+                    <div className="space-y-1"><p className="text-xs font-bold text-zinc-500 tracking-wider uppercase">SỐ HÓA ĐƠN</p><p className="text-2xl font-extrabold text-zinc-100 font-mono">{stats.transactions}</p><p className="text-[10px] text-zinc-500">Giao dịch thành công</p></div>
+                    <div className="p-3.5 bg-zinc-700 text-zinc-300 rounded-xl"><Receipt className="w-6 h-6" /></div>
                   </div>
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-                    <div className="space-y-1"><p className="text-xs font-bold text-slate-400 tracking-wider uppercase">ĐƠN TRUNG BÌNH</p><p className="text-lg font-bold text-slate-800 font-mono">{formatVND(stats.averageTicket)}</p>{isManager && <p className="text-[10px] text-blue-600 font-semibold italic">Lợi nhuận: {Math.round(stats.margin)}%</p>}</div>
+                  <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
+                    <div className="space-y-1"><p className="text-xs font-bold text-zinc-500 tracking-wider uppercase">ĐƠN TRUNG BÌNH</p><p className="text-lg font-bold text-zinc-100 font-mono">{formatVND(stats.averageTicket)}</p>{isManager && <p className="text-[10px] text-blue-600 font-semibold italic">Lợi nhuận: {Math.round(stats.margin)}%</p>}</div>
                     <div className="p-3.5 bg-purple-50 text-purple-600 rounded-xl"><Percent className="w-6 h-6" /></div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs lg:col-span-2 space-y-4">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                      <div><h3 className="font-extrabold text-slate-800 text-sm">Biểu đồ doanh thu theo ngày</h3><p className="text-[11px] text-slate-400 mt-0.5">{isManager ? 'Doanh thu (xanh dương) & Lợi nhuận (xanh lá)' : 'Doanh thu theo ngày'}</p></div>
-                      <div className="flex items-center gap-2 text-[10px] bg-slate-50 border border-slate-150 px-2 py-1 rounded-md font-semibold text-slate-500"><Calendar className="w-3.5 h-3.5" /> {presetLabel[rangePreset]}</div>
+                  <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs lg:col-span-2 space-y-4">
+                    <div className="flex justify-between items-center pb-2 border-b border-zinc-700">
+                      <div><h3 className="font-extrabold text-zinc-100 text-sm">Biểu đồ doanh thu theo ngày</h3><p className="text-[11px] text-zinc-500 mt-0.5">{isManager ? 'Doanh thu (xanh dương) & Lợi nhuận (xanh lá)' : 'Doanh thu theo ngày'}</p></div>
+                      <div className="flex items-center gap-2 text-[10px] bg-zinc-800 border border-zinc-700 px-2 py-1 rounded-md font-semibold text-zinc-400"><Calendar className="w-3.5 h-3.5" /> {presetLabel[rangePreset]}</div>
                     </div>
                     <div className="relative pt-2 h-[220px]">
                       <svg viewBox={`0 0 ${svgDim.width} ${svgDim.height}`} className="w-full h-full overflow-visible">
@@ -490,7 +543,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                       </svg>
                       {hoveredDataIdx !== null && (
                         <div className="absolute bg-slate-900/95 text-white p-3 rounded-xl shadow-lg border border-slate-700 pointer-events-none text-xs z-20 space-y-1" style={{ left: `${(hoveredDataIdx / Math.max(chartData.length - 1, 1)) * 70 + 10}%`, top: '5%' }}>
-                          <p className="font-bold border-b border-slate-700 pb-1 text-[10px] text-slate-400">NGÀY {chartData[hoveredDataIdx].date}</p>
+                          <p className="font-bold border-b border-slate-700 pb-1 text-[10px] text-zinc-500">NGÀY {chartData[hoveredDataIdx].date}</p>
                           <p className="flex justify-between gap-4"><span>Doanh thu:</span><span className="font-mono font-bold text-sky-400">{formatVND(chartData[hoveredDataIdx].revenue)}</span></p>
                           {isManager && <p className="flex justify-between gap-4"><span>Lợi nhuận:</span><span className="font-mono font-bold text-emerald-400">{formatVND(chartData[hoveredDataIdx].profit)}</span></p>}
                           <p className="flex justify-between gap-4"><span>Giao dịch:</span><span className="font-mono font-bold">{chartData[hoveredDataIdx].transactions} đơn</span></p>
@@ -498,28 +551,28 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                       )}
                     </div>
                   </div>
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
-                    <div><h3 className="font-bold text-slate-800 text-sm">Cơ cấu thanh toán</h3><p className="text-[11px] text-slate-400 mt-0.5">Phương thức thanh toán trong kỳ.</p></div>
+                  <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex flex-col justify-between">
+                    <div><h3 className="font-bold text-zinc-100 text-sm">Cơ cấu thanh toán</h3><p className="text-[11px] text-zinc-500 mt-0.5">Phương thức thanh toán trong kỳ.</p></div>
                     <div className="my-6 space-y-4">
                       {paymentMethodStats.map(item => (
                         <div key={item.name} className="space-y-1.5">
-                          <div className="flex justify-between text-xs font-semibold"><span className="text-slate-600 flex items-center gap-2"><span className={`w-3 h-3 rounded-full ${item.color}`}></span>{item.name}</span><span className="text-slate-800">{item.percent}% <span className="text-slate-400 font-mono">({formatVND(item.value)})</span></span></div>
-                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden"><div className={`h-full ${item.color} rounded-full`} style={{ width: `${item.percent}%` }}></div></div>
+                          <div className="flex justify-between text-xs font-semibold"><span className="text-zinc-300 flex items-center gap-2"><span className={`w-3 h-3 rounded-full ${item.color}`}></span>{item.name}</span><span className="text-zinc-100">{item.percent}% <span className="text-zinc-500 font-mono">({formatVND(item.value)})</span></span></div>
+                          <div className="w-full h-2 bg-zinc-700 rounded-full overflow-hidden"><div className={`h-full ${item.color} rounded-full`} style={{ width: `${item.percent}%` }}></div></div>
                         </div>
                       ))}
                     </div>
-                    <p className="text-[11px] text-slate-400 italic text-center pb-1">Mã QR chuyển khoản tăng nhanh trong hành vi tiêu dùng.</p>
+                    <p className="text-[11px] text-zinc-500 italic text-center pb-1">Mã QR chuyển khoản tăng nhanh trong hành vi tiêu dùng.</p>
                   </div>
                 </div>
 
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                  <div className="flex items-center gap-2 pb-3 border-b border-slate-200 mb-4 text-slate-800"><ShoppingBag className="w-5 h-5 text-blue-600 shrink-0" /><h3 className="font-bold text-sm">Top 5 sản phẩm bán chạy</h3></div>
-                  {topProducts.length === 0 ? (<div className="p-6 text-center text-slate-400 text-xs">Chưa có giao dịch trong kỳ báo cáo.</div>) : (
+                <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-sm">
+                  <div className="flex items-center gap-2 pb-3 border-b border-zinc-700 mb-4 text-zinc-100"><ShoppingBag className="w-5 h-5 text-blue-600 shrink-0" /><h3 className="font-bold text-sm">Top 5 sản phẩm bán chạy</h3></div>
+                  {topProducts.length === 0 ? (<div className="p-6 text-center text-zinc-500 text-xs">Chưa có giao dịch trong kỳ báo cáo.</div>) : (
                     <div className="space-y-4">
                       {topProducts.map((p, idx) => { const maxQty = topProducts[0]?.quantity || 1; return (
-                        <div key={p.sku} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50/50 rounded-lg hover:bg-slate-50 transition border border-slate-200">
-                          <div className="flex items-center gap-3 min-w-0 flex-1"><span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center shrink-0">{idx + 1}</span><div className="min-w-0"><p className="font-bold text-slate-800 text-xs sm:text-sm truncate">{p.name}</p><span className="text-[11px] text-slate-450 font-mono">SKU: {p.sku}</span></div></div>
-                          <div className="flex items-center gap-4 shrink-0"><div className="hidden sm:block w-32 bg-slate-150 h-1.5 rounded-full overflow-hidden"><div className="h-full bg-indigo-600 rounded-full" style={{ width: `${(p.quantity / maxQty) * 100}%` }}></div></div><div><p className="text-xs sm:text-sm font-black text-slate-800">{p.quantity} <span className="font-light text-[11px] text-slate-400">bán ra</span></p><p className="text-[10px] text-emerald-600 font-mono font-medium">{formatVND(p.revenue)}</p></div></div>
+                        <div key={p.sku} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-zinc-800/20 rounded-lg hover:bg-zinc-800/40 transition border border-zinc-700">
+                          <div className="flex items-center gap-3 min-w-0 flex-1"><span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center shrink-0">{idx + 1}</span><div className="min-w-0"><p className="font-bold text-zinc-100 text-xs sm:text-sm truncate">{p.name}</p><span className="text-[11px] text-slate-450 font-mono">SKU: {p.sku}</span></div></div>
+                          <div className="flex items-center gap-4 shrink-0"><div className="hidden sm:block w-32 bg-slate-150 h-1.5 rounded-full overflow-hidden"><div className="h-full bg-indigo-600 rounded-full" style={{ width: `${(p.quantity / maxQty) * 100}%` }}></div></div><div><p className="text-xs sm:text-sm font-black text-zinc-100">{p.quantity} <span className="font-light text-[11px] text-zinc-500">bán ra</span></p><p className="text-[10px] text-emerald-600 font-mono font-medium">{formatVND(p.revenue)}</p></div></div>
                         </div>
                       ); })}
                     </div>
@@ -535,40 +588,40 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       {reportType === 'debt' && (
         <div className="space-y-5">
           {debtLoading ? (
-            <div className="flex items-center justify-center py-16"><div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /><p className="ml-3 text-slate-500 text-sm">Đang tải...</p></div>
+            <div className="flex items-center justify-center py-16"><div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /><p className="ml-3 text-zinc-400 text-sm">Đang tải...</p></div>
           ) : debtError ? (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-5 flex items-center gap-3"><AlertCircle className="w-5 h-5 text-rose-600 shrink-0" /><p className="text-rose-700 text-sm">{debtError}</p></div>
+            <div className="bg-rose-900/20 border border-rose-700/50 rounded-xl p-5 flex items-center gap-3"><AlertCircle className="w-5 h-5 text-rose-600 shrink-0" /><p className="text-rose-300 text-sm">{debtError}</p></div>
           ) : (
             <>
               {/* Summary */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-                  <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">TỔNG NỢ CÒN LẠI</p><p className={`text-xl font-extrabold font-mono mt-1 ${totalDebt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatVND(totalDebt)}</p></div>
-                  <div className="p-3.5 bg-rose-50 text-rose-600 rounded-xl"><Banknote className="w-6 h-6" /></div>
+                <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
+                  <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">TỔNG NỢ CÒN LẠI</p><p className={`text-xl font-extrabold font-mono mt-1 ${totalDebt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatVND(totalDebt)}</p></div>
+                  <div className="p-3.5 bg-rose-900/30 text-rose-400 rounded-xl"><Banknote className="w-6 h-6" /></div>
                 </div>
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-                  <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">SỐ ĐỐI TÁC CÒN NỢ</p><p className="text-xl font-extrabold text-slate-800 mt-1">{debtByPartner.filter(p => p.remaining > 0).length}</p></div>
-                  <div className="p-3.5 bg-amber-50 text-amber-600 rounded-xl"><Users className="w-6 h-6" /></div>
+                <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
+                  <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">SỐ ĐỐI TÁC CÒN NỢ</p><p className="text-xl font-extrabold text-zinc-100 mt-1">{debtByPartner.filter(p => p.remaining > 0).length}</p></div>
+                  <div className="p-3.5 bg-amber-900/30 text-amber-400 rounded-xl"><Users className="w-6 h-6" /></div>
                 </div>
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-                  <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">TỔNG ĐÃ THANH TOÁN</p><p className="text-xl font-extrabold text-emerald-600 font-mono mt-1">{formatVND(debtByPartner.reduce((s, p) => s + p.paid, 0))}</p></div>
-                  <div className="p-3.5 bg-emerald-50 text-emerald-600 rounded-xl"><TrendingUp className="w-6 h-6" /></div>
-                </div>
+                <button onClick={() => setShowDebtPaidHistory(true)} className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between w-full text-left cursor-pointer hover:bg-zinc-700/50 transition">
+                  <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">TỔNG ĐÃ THANH TOÁN</p><p className="text-xl font-extrabold text-emerald-400 font-mono mt-1">{formatVND(debtByPartner.reduce((s, p) => s + p.paid, 0))}</p><p className="text-[10px] text-zinc-500 mt-0.5">Bấm để xem lịch sử →</p></div>
+                  <div className="p-3.5 bg-emerald-900/30 text-emerald-400 rounded-xl"><TrendingUp className="w-6 h-6" /></div>
+                </button>
               </div>
 
               {/* Per-partner breakdown */}
               {debtByPartner.length === 0 ? (
-                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
-                  <ArrowDownToLine className="w-10 h-10 mx-auto stroke-1 mb-2 text-slate-300" />
+                <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 p-12 text-center text-zinc-500">
+                  <ArrowDownToLine className="w-10 h-10 mx-auto stroke-1 mb-2 text-zinc-600" />
                   <p className="text-sm font-semibold">Không có công nợ</p>
                 </div>
               ) : debtByPartner.map(p => (
-                <div key={p.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50/60 transition"
+                <div key={p.id} className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
+                  <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-zinc-800/40 transition"
                     onClick={() => setExpandedPartnerId(expandedPartnerId === p.id ? null : p.id)}>
                     <div>
-                      <p className="font-bold text-slate-800">{p.partnerName}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{p.orders.length} phiếu nhập · Tổng: {formatVND(p.total)} · Đã trả: {formatVND(p.paid)}</p>
+                      <p className="font-bold text-zinc-100">{p.partnerName}</p>
+                      <p className="text-xs text-zinc-400 mt-0.5">{p.orders.length} phiếu nhập · Tổng: {formatVND(p.total)} · Đã trả: {formatVND(p.paid)}</p>
                     </div>
                     <div className="text-right shrink-0 ml-4">
                       <p className={`font-bold font-mono ${p.remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{p.remaining > 0 ? formatVND(p.remaining) : 'Đã thanh toán đủ'}</p>
@@ -578,14 +631,14 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                   <AnimatePresence>
                     {expandedPartnerId === p.id && (
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                        <div className="border-t border-slate-100 divide-y divide-slate-50">
+                        <div className="border-t border-zinc-700/50 divide-y divide-slate-50">
                           {p.orders.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map(o => {
                             const rem = o.totalAmount - o.paidAmount;
                             return (
                               <div key={o.id} className="px-4 py-3 flex items-center justify-between gap-4">
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-mono font-bold text-slate-600">{o.id}</p>
-                                  <p className="text-xs text-slate-400">{new Date(o.timestamp).toLocaleDateString('vi-VN')} · {o.items.length} sản phẩm</p>
+                                  <p className="text-xs font-mono font-bold text-zinc-300">{o.id}</p>
+                                  <p className="text-xs text-zinc-500">{new Date(o.timestamp).toLocaleDateString('vi-VN')} · {o.items.length} sản phẩm</p>
                                 </div>
                                 <div className="text-right shrink-0 text-xs space-y-0.5">
                                   <p className="font-mono font-bold">{formatVND(o.totalAmount)}</p>
@@ -593,7 +646,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                                   {rem <= 0 && <p className="text-emerald-600 font-semibold">Đã trả đủ</p>}
                                 </div>
                                 {rem > 0 && (
-                                  <button onClick={() => openPay(o)} className="px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg text-xs font-bold cursor-pointer transition whitespace-nowrap">Trả nợ</button>
+                                  <button onClick={() => openPay(o)} className="px-3 py-1.5 bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 rounded-lg text-xs font-bold cursor-pointer transition whitespace-nowrap">Trả nợ</button>
                                 )}
                               </div>
                             );
@@ -608,13 +661,13 @@ export default function Reports({ invoices, products, isManager = false, onSelec
           )}
           {/* Payment log history for debt */}
           {!debtLoading && paymentLogs.filter(l => l.type === 'debt').length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-slate-200">
-                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><History className="w-4 h-4 text-emerald-600" /> Lịch sử thanh toán công nợ</h3>
+            <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-zinc-700">
+                <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><History className="w-4 h-4 text-emerald-600" /> Lịch sử thanh toán công nợ</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
                     <tr>
                       <th className="px-4 py-3">Thời gian</th>
                       <th className="px-4 py-3">Đối tác</th>
@@ -624,14 +677,14 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                       <th className="px-4 py-3 text-right">Còn nợ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-zinc-700">
                     {paymentLogs.filter(l => l.type === 'debt').map(log => (
-                      <tr key={log.id} className="hover:bg-slate-50/50 transition">
-                        <td className="px-4 py-3 text-xs text-slate-500 font-mono whitespace-nowrap">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-800">{log.referenceName}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-500">{log.referenceId}</td>
+                      <tr key={log.id} className="hover:bg-zinc-800/20 transition">
+                        <td className="px-4 py-3 text-xs text-zinc-400 font-mono whitespace-nowrap">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
+                        <td className="px-4 py-3 font-semibold text-zinc-100">{log.referenceName}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-zinc-400">{log.referenceId}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${log.paymentMethod === 'bank' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${log.paymentMethod === 'bank' ? 'bg-blue-900/30 text-blue-300' : 'bg-amber-900/30 text-amber-300'}`}>
                             {log.paymentMethod === 'bank' ? <><Building2 className="w-3 h-3" /> CK</> : <><Banknote className="w-3 h-3" /> Tiền mặt</>}
                           </span>
                         </td>
@@ -652,20 +705,35 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       {/* ── SALARY TAB ───────────────────────────────────── */}
       {reportType === 'salary' && (
         <div className="space-y-6">
+          {/* Salary stat cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
+              <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">TỔNG NỢ LƯƠNG</p><p className={`text-xl font-extrabold font-mono mt-1 ${salaryTotalRemaining > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{formatVND(salaryTotalRemaining)}</p></div>
+              <div className="p-3.5 bg-rose-900/30 text-rose-400 rounded-xl"><Banknote className="w-6 h-6" /></div>
+            </div>
+            <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
+              <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">SỐ NGƯỜI CHƯA TRẢ LƯƠNG</p><p className="text-xl font-extrabold text-amber-400 mt-1">{salaryUnpaidCount}</p></div>
+              <div className="p-3.5 bg-amber-900/30 text-amber-400 rounded-xl"><Users className="w-6 h-6" /></div>
+            </div>
+            <button onClick={() => setShowSalaryPaidHistory(true)} className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between w-full text-left cursor-pointer hover:bg-zinc-700/50 transition">
+              <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">TỔNG ĐÃ TRẢ LƯƠNG</p><p className="text-xl font-extrabold text-emerald-400 font-mono mt-1">{formatVND(salaryTotalPaid)}</p><p className="text-[10px] text-zinc-500 mt-0.5">Bấm để xem lịch sử →</p></div>
+              <div className="p-3.5 bg-emerald-900/30 text-emerald-400 rounded-xl"><TrendingUp className="w-6 h-6" /></div>
+            </button>
+          </div>
           {/* Salary in range grouped by person */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-slate-200">
-              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-amber-600" /> Lương phát sinh trong kỳ</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Nhóm theo nhân viên, tổng hợp đợt và ngày công.</p>
+          <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-zinc-700">
+              <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-amber-600" /> Lương phát sinh trong kỳ</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">Nhóm theo nhân viên, tổng hợp đợt và ngày công.</p>
             </div>
             {salaryLoading ? (
-              <div className="flex items-center justify-center py-10"><div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /><p className="ml-2 text-slate-500 text-sm">Đang tải...</p></div>
+              <div className="flex items-center justify-center py-10"><div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /><p className="ml-2 text-zinc-400 text-sm">Đang tải...</p></div>
             ) : salaryInRangeGrouped.length === 0 ? (
-              <div className="p-10 text-center text-slate-400"><Users className="w-8 h-8 mx-auto stroke-1 mb-2 text-slate-300" /><p className="text-sm font-semibold">Không có lương phát sinh trong kỳ</p></div>
+              <div className="p-10 text-center text-zinc-500"><Users className="w-8 h-8 mx-auto stroke-1 mb-2 text-zinc-600" /><p className="text-sm font-semibold">Không có lương phát sinh trong kỳ</p></div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
                     <tr>
                       <th className="px-4 py-3">Họ tên</th>
                       <th className="px-4 py-3 text-center">Đợt</th>
@@ -673,25 +741,25 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                       <th className="px-4 py-3 text-right">Tổng phát sinh</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-zinc-700">
                     {salaryInRangeGrouped.map(g => (
-                      <tr key={g.fullName} className="hover:bg-amber-50/30 transition">
-                        <td className="px-4 py-3 font-semibold text-slate-800">{g.fullName}</td>
+                      <tr key={g.fullName} className="hover:bg-amber-950/20 transition">
+                        <td className="px-4 py-3 font-semibold text-zinc-100">{g.fullName}</td>
                         <td className="px-4 py-3 text-center">
                           {g.lumpCount > 0
-                            ? <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md text-xs font-bold">{g.lumpCount} đợt</span>
-                            : <span className="text-slate-300">—</span>}
+                            ? <span className="px-2 py-0.5 bg-blue-900/30 text-blue-300 rounded-md text-xs font-bold">{g.lumpCount} đợt</span>
+                            : <span className="text-zinc-600">—</span>}
                         </td>
                         <td className="px-4 py-3 text-center">
                           {g.totalDays > 0
-                            ? <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md text-xs font-bold">{g.totalDays} ngày</span>
-                            : <span className="text-slate-300">—</span>}
+                            ? <span className="px-2 py-0.5 bg-purple-900/30 text-purple-300 rounded-md text-xs font-bold">{g.totalDays} ngày</span>
+                            : <span className="text-zinc-600">—</span>}
                         </td>
                         <td className="px-4 py-3 text-right font-bold font-mono text-amber-700">{formatVND(g.totalAmount)}</td>
                       </tr>
                     ))}
-                    <tr className="bg-amber-50 border-t-2 border-amber-200">
-                      <td className="px-4 py-3 font-extrabold text-slate-800" colSpan={3}>Tổng cộng</td>
+                    <tr className="bg-amber-950/30 border-t-2 border-amber-800/50">
+                      <td className="px-4 py-3 font-extrabold text-zinc-100" colSpan={3}>Tổng cộng</td>
                       <td className="px-4 py-3 text-right font-extrabold font-mono text-amber-800">{formatVND(totalSalary)}</td>
                     </tr>
                   </tbody>
@@ -702,17 +770,17 @@ export default function Reports({ invoices, products, isManager = false, onSelec
 
           {/* Salary Management */}
           {salaryLoading ? null : (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-              <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-blue-600" /> Quản lý bảng lương</h3>
+            <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm">
+              <div className="p-5 border-b border-zinc-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-blue-600" /> Quản lý bảng lương</h3>
                 <div className="flex gap-2 flex-wrap">
                   <input ref={xlsxInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportExcel} />
                   <button onClick={() => xlsxInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-bold cursor-pointer transition">
+                    className="flex items-center gap-1.5 px-3 py-1.5 border border-zinc-700 text-zinc-300 hover:bg-zinc-800/40 rounded-lg text-xs font-bold cursor-pointer transition">
                     <Upload className="w-3.5 h-3.5" /> Nhập Excel
                   </button>
                   <button onClick={exportSalaryExcel}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-bold cursor-pointer transition">
+                    className="flex items-center gap-1.5 px-3 py-1.5 border border-zinc-700 text-zinc-300 hover:bg-zinc-800/40 rounded-lg text-xs font-bold cursor-pointer transition">
                     <Download className="w-3.5 h-3.5" /> Xuất Excel
                   </button>
                   <button onClick={openAddSalary}
@@ -721,19 +789,19 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                   </button>
                 </div>
               </div>
-              <div className="p-4 border-b border-slate-100">
+              <div className="p-4 border-b border-zinc-700/50">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
                   <input value={salarySearch} onChange={e => setSalarySearch(e.target.value)} placeholder="Tìm nhân viên..."
-                    className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                    className="w-full pl-9 pr-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none bg-zinc-800 text-zinc-100 focus:border-blue-500" />
                 </div>
               </div>
               {filteredSalary.length === 0 ? (
-                <div className="p-12 text-center text-slate-400"><Users className="w-10 h-10 mx-auto stroke-1 mb-2 text-slate-300" /><p className="text-sm font-semibold">Chưa có bảng lương</p></div>
+                <div className="p-12 text-center text-zinc-500"><Users className="w-10 h-10 mx-auto stroke-1 mb-2 text-zinc-600" /><p className="text-sm font-semibold">Chưa có bảng lương</p></div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
                       <tr>
                         <th className="px-4 py-3">Họ tên</th>
                         <th className="px-4 py-3">SĐT</th>
@@ -746,25 +814,25 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                         <th className="px-4 py-3 text-right">Thao tác</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-zinc-700">
                       {filteredSalary.map(e => {
                         const paid = e.paidAmount ?? 0;
                         const remaining = e.amount - paid;
                         return (
-                          <tr key={e.id} className="hover:bg-slate-50/50 transition">
+                          <tr key={e.id} className="hover:bg-zinc-800/20 transition">
                             <td className="px-4 py-3">
-                              <p className="font-semibold text-slate-800">{e.fullName}</p>
-                              {e.bankAccount && <p className="text-[10px] text-slate-400 font-mono">{SAL_BANKS.find(b => b.id === e.bankName)?.name ?? e.bankName} · {e.bankAccount}</p>}
+                              <p className="font-semibold text-zinc-100">{e.fullName}</p>
+                              {e.bankAccount && <p className="text-[10px] text-zinc-500 font-mono">{SAL_BANKS.find(b => b.id === e.bankName)?.name ?? e.bankName} · {e.bankAccount}</p>}
                             </td>
-                            <td className="px-4 py-3 font-mono text-xs text-slate-500">{e.phone || '—'}</td>
-                            <td className="px-4 py-3 text-right font-mono font-bold text-slate-800">{formatVND(e.amount)}</td>
+                            <td className="px-4 py-3 font-mono text-xs text-zinc-400">{e.phone || '—'}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-zinc-100">{formatVND(e.amount)}</td>
                             <td className="px-4 py-3">
-                              <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${e.calcType === 'lump' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>
+                              <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${e.calcType === 'lump' ? 'bg-blue-900/30 text-blue-300' : 'bg-purple-900/30 text-purple-300'}`}>
                                 {e.calcType === 'lump' ? 'Đợt' : 'Ngày'}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-xs text-slate-500 font-mono">{e.dateFrom}</td>
-                            <td className="px-4 py-3 text-xs text-slate-500 font-mono">{e.dateTo}</td>
+                            <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{e.dateFrom}</td>
+                            <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{e.dateTo}</td>
                             <td className="px-4 py-3 text-right font-mono text-xs text-emerald-600 font-bold">{paid > 0 ? formatVND(paid) : '—'}</td>
                             <td className="px-4 py-3 text-right font-mono text-xs font-bold">
                               {remaining > 0 ? <span className="text-rose-600">{formatVND(remaining)}</span> : <span className="text-emerald-600">Đủ</span>}
@@ -772,10 +840,10 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                             <td className="px-4 py-3">
                               <div className="flex items-center justify-end gap-1">
                                 {remaining > 0 && (
-                                  <button onClick={() => openPaySalary(e)} className="px-2 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg text-[11px] font-bold cursor-pointer transition whitespace-nowrap">Trả lương</button>
+                                  <button onClick={() => openPaySalary(e)} className="px-2 py-1 bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 rounded-lg text-[11px] font-bold cursor-pointer transition whitespace-nowrap">Trả lương</button>
                                 )}
-                                <button onClick={() => openEditSalary(e)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"><Pencil className="w-4 h-4" /></button>
-                                <button onClick={() => setDeleteSalaryConfirm(e.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"><Trash2 className="w-4 h-4" /></button>
+                                <button onClick={() => openEditSalary(e)} className="p-1.5 text-zinc-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"><Pencil className="w-4 h-4" /></button>
+                                <button onClick={() => setDeleteSalaryConfirm(e.id)} className="p-1.5 text-zinc-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"><Trash2 className="w-4 h-4" /></button>
                               </div>
                             </td>
                           </tr>
@@ -789,13 +857,13 @@ export default function Reports({ invoices, products, isManager = false, onSelec
           )}
           {/* Payment log history for salary */}
           {paymentLogs.filter(l => l.type === 'salary').length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-slate-200">
-                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><History className="w-4 h-4 text-blue-600" /> Lịch sử trả lương</h3>
+            <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-zinc-700">
+                <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><History className="w-4 h-4 text-blue-600" /> Lịch sử trả lương</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
                     <tr>
                       <th className="px-4 py-3">Thời gian</th>
                       <th className="px-4 py-3">Nhân viên</th>
@@ -805,13 +873,13 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                       <th className="px-4 py-3">Ghi chú</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-zinc-700">
                     {paymentLogs.filter(l => l.type === 'salary').map(log => (
-                      <tr key={log.id} className="hover:bg-slate-50/50 transition">
-                        <td className="px-4 py-3 text-xs text-slate-500 font-mono whitespace-nowrap">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-800">{log.referenceName}</td>
+                      <tr key={log.id} className="hover:bg-zinc-800/20 transition">
+                        <td className="px-4 py-3 text-xs text-zinc-400 font-mono whitespace-nowrap">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
+                        <td className="px-4 py-3 font-semibold text-zinc-100">{log.referenceName}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${log.paymentMethod === 'bank' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${log.paymentMethod === 'bank' ? 'bg-blue-900/30 text-blue-300' : 'bg-amber-900/30 text-amber-300'}`}>
                             {log.paymentMethod === 'bank' ? <><Building2 className="w-3 h-3" /> CK</> : <><Banknote className="w-3 h-3" /> Tiền mặt</>}
                           </span>
                         </td>
@@ -819,7 +887,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                         <td className="px-4 py-3 text-right font-mono text-xs font-bold">
                           {log.remaining > 0 ? <span className="text-rose-600">{formatVND(log.remaining)}</span> : <span className="text-emerald-600">Đủ</span>}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-400">{log.notes}</td>
+                        <td className="px-4 py-3 text-xs text-zinc-500">{log.notes}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -838,13 +906,13 @@ export default function Reports({ invoices, products, isManager = false, onSelec
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             {[
               { label: 'DOANH SỐ', value: stats.revenue, color: 'text-blue-600', bg: 'bg-blue-50', icon: <CircleDollarSign className="w-5 h-5" /> },
-              { label: 'GIÁ VỐN', value: stats.cost, color: 'text-slate-600', bg: 'bg-slate-100', icon: <ArrowDownToLine className="w-5 h-5" /> },
+              { label: 'GIÁ VỐN', value: stats.cost, color: 'text-zinc-300', bg: 'bg-zinc-700', icon: <ArrowDownToLine className="w-5 h-5" /> },
               { label: 'LỢI NHUẬN GỘP', value: stats.profit, color: stats.profit >= 0 ? 'text-emerald-600' : 'text-rose-600', bg: 'bg-emerald-50', icon: <TrendingUp className="w-5 h-5" /> },
               { label: 'TỔNG LƯƠNG', value: totalSalary, color: 'text-amber-600', bg: 'bg-amber-50', icon: <Users className="w-5 h-5" /> },
               { label: 'LỢI NHUẬN RÒNG', value: netProfit, color: netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700', bg: netProfit >= 0 ? 'bg-emerald-50' : 'bg-rose-50', icon: <Wallet className="w-5 h-5" /> },
             ].map(card => (
-              <div key={card.label} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-                <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{card.label}</p><p className={`text-base font-extrabold font-mono mt-1 ${card.color}`}>{formatVND(card.value)}</p></div>
+              <div key={card.label} className="bg-zinc-800/50 p-4 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
+                <div><p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{card.label}</p><p className={`text-base font-extrabold font-mono mt-1 ${card.color}`}>{formatVND(card.value)}</p></div>
                 <div className={`p-2.5 ${card.bg} ${card.color} rounded-xl`}>{card.icon}</div>
               </div>
             ))}
@@ -853,26 +921,26 @@ export default function Reports({ invoices, products, isManager = false, onSelec
           {/* Formula */}
           <div className="bg-slate-800 rounded-xl p-4 text-sm font-mono text-center">
             <span className="text-blue-300">{formatVND(stats.revenue)}</span>
-            <span className="text-slate-500"> − </span>
-            <span className="text-slate-300">{formatVND(stats.cost)}</span>
-            <span className="text-slate-500"> − </span>
+            <span className="text-zinc-400"> − </span>
+            <span className="text-zinc-600">{formatVND(stats.cost)}</span>
+            <span className="text-zinc-400"> − </span>
             <span className="text-amber-300">{formatVND(totalSalary)}</span>
-            <span className="text-slate-500"> = </span>
+            <span className="text-zinc-400"> = </span>
             <span className={`font-extrabold ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatVND(netProfit)}</span>
-            <span className="text-slate-500 text-xs block mt-1">Doanh số − Giá vốn − Lương = Lợi nhuận ròng</span>
+            <span className="text-zinc-400 text-xs block mt-1">Doanh số − Giá vốn − Lương = Lợi nhuận ròng</span>
           </div>
 
           {/* Salary in range grouped */}
           {salaryLoading ? (
             <div className="flex items-center justify-center py-10"><div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>
           ) : salaryInRangeGrouped.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-slate-200">
-                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-amber-600" /> Lương phát sinh trong kỳ (theo nhân viên)</h3>
+            <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-zinc-700">
+                <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><Users className="w-4 h-4 text-amber-600" /> Lương phát sinh trong kỳ (theo nhân viên)</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
                     <tr>
                       <th className="px-4 py-3">Họ tên</th>
                       <th className="px-4 py-3 text-center">Đợt</th>
@@ -880,15 +948,15 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                       <th className="px-4 py-3 text-right">Tổng phát sinh</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-zinc-700">
                     {salaryInRangeGrouped.map(g => (
-                      <tr key={g.fullName} className="hover:bg-amber-50/30 transition">
-                        <td className="px-4 py-3 font-semibold text-slate-800">{g.fullName}</td>
+                      <tr key={g.fullName} className="hover:bg-amber-950/20 transition">
+                        <td className="px-4 py-3 font-semibold text-zinc-100">{g.fullName}</td>
                         <td className="px-4 py-3 text-center">
-                          {g.lumpCount > 0 ? <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md text-xs font-bold">{g.lumpCount} đợt</span> : <span className="text-slate-300">—</span>}
+                          {g.lumpCount > 0 ? <span className="px-2 py-0.5 bg-blue-900/30 text-blue-300 rounded-md text-xs font-bold">{g.lumpCount} đợt</span> : <span className="text-zinc-600">—</span>}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {g.totalDays > 0 ? <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md text-xs font-bold">{g.totalDays} ngày</span> : <span className="text-slate-300">—</span>}
+                          {g.totalDays > 0 ? <span className="px-2 py-0.5 bg-purple-900/30 text-purple-300 rounded-md text-xs font-bold">{g.totalDays} ngày</span> : <span className="text-zinc-600">—</span>}
                         </td>
                         <td className="px-4 py-3 text-right font-bold font-mono text-amber-700">{formatVND(g.totalAmount)}</td>
                       </tr>
@@ -901,28 +969,154 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         </div>
       )}
 
+      {/* Debt Payment History Modal */}
+      <AnimatePresence>
+        {showDebtPaidHistory && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between p-5 border-b border-zinc-700">
+                <h3 className="font-bold text-zinc-100 flex items-center gap-2"><History className="w-5 h-5 text-emerald-400" /> Lịch sử thanh toán công nợ</h3>
+                <div className="flex items-center gap-2">
+                  <button onClick={downloadDebtPaymentTemplate} className="flex items-center gap-1.5 px-3 py-1.5 border border-zinc-600 text-zinc-300 hover:bg-zinc-700 rounded-lg text-xs font-bold cursor-pointer transition">
+                    <Download className="w-3.5 h-3.5" /> File mẫu
+                  </button>
+                  <button onClick={exportDebtPaymentHistory} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer transition">
+                    <Download className="w-3.5 h-3.5" /> Xuất Excel
+                  </button>
+                  <button onClick={() => setShowDebtPaidHistory(false)} className="text-zinc-400 hover:text-zinc-200 cursor-pointer ml-1"><X className="w-5 h-5" /></button>
+                </div>
+              </div>
+              <div className="overflow-auto flex-1">
+                {paymentLogs.filter(l => l.type === 'debt').length === 0 ? (
+                  <div className="p-12 text-center text-zinc-500"><History className="w-10 h-10 mx-auto mb-2 stroke-1" /><p className="text-sm">Chưa có lịch sử thanh toán công nợ</p></div>
+                ) : (
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3">STT</th>
+                        <th className="px-4 py-3">Thời gian thanh toán</th>
+                        <th className="px-4 py-3">Đối tác</th>
+                        <th className="px-4 py-3">Phiếu nhập hàng</th>
+                        <th className="px-4 py-3">Hình thức</th>
+                        <th className="px-4 py-3 text-right">Số tiền</th>
+                        <th className="px-4 py-3 text-right">Còn nợ</th>
+                        <th className="px-4 py-3">Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-700">
+                      {paymentLogs.filter(l => l.type === 'debt').map((log, i) => (
+                        <tr key={log.id} className="hover:bg-zinc-800/40 transition">
+                          <td className="px-4 py-3 text-zinc-500 text-xs">{i + 1}</td>
+                          <td className="px-4 py-3 text-xs text-zinc-400 font-mono whitespace-nowrap">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
+                          <td className="px-4 py-3 font-semibold text-zinc-200">{log.referenceName}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-zinc-400">{log.referenceId}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${log.paymentMethod === 'bank' ? 'bg-blue-900/30 text-blue-300' : 'bg-amber-900/30 text-amber-300'}`}>
+                              {log.paymentMethod === 'bank' ? <><Building2 className="w-3 h-3" /> CK</> : <><Banknote className="w-3 h-3" /> Tiền mặt</>}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400">{formatVND(log.amount)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-xs font-bold">
+                            {log.remaining > 0 ? <span className="text-rose-400">{formatVND(log.remaining)}</span> : <span className="text-emerald-400">Đủ</span>}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-zinc-500">{log.notes ?? ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Salary Payment History Modal */}
+      <AnimatePresence>
+        {showSalaryPaidHistory && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between p-5 border-b border-zinc-700">
+                <h3 className="font-bold text-zinc-100 flex items-center gap-2"><History className="w-5 h-5 text-blue-400" /> Lịch sử trả lương</h3>
+                <div className="flex items-center gap-2">
+                  <button onClick={downloadSalaryPaymentTemplate} className="flex items-center gap-1.5 px-3 py-1.5 border border-zinc-600 text-zinc-300 hover:bg-zinc-700 rounded-lg text-xs font-bold cursor-pointer transition">
+                    <Download className="w-3.5 h-3.5" /> File mẫu
+                  </button>
+                  <button onClick={exportSalaryPaymentHistory} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer transition">
+                    <Download className="w-3.5 h-3.5" /> Xuất Excel
+                  </button>
+                  <button onClick={() => setShowSalaryPaidHistory(false)} className="text-zinc-400 hover:text-zinc-200 cursor-pointer ml-1"><X className="w-5 h-5" /></button>
+                </div>
+              </div>
+              <div className="overflow-auto flex-1">
+                {paymentLogs.filter(l => l.type === 'salary').length === 0 ? (
+                  <div className="p-12 text-center text-zinc-500"><History className="w-10 h-10 mx-auto mb-2 stroke-1" /><p className="text-sm">Chưa có lịch sử trả lương</p></div>
+                ) : (
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3">STT</th>
+                        <th className="px-4 py-3">Thời gian thanh toán</th>
+                        <th className="px-4 py-3">Họ và tên</th>
+                        <th className="px-4 py-3">Thời gian làm việc</th>
+                        <th className="px-4 py-3">Hình thức</th>
+                        <th className="px-4 py-3 text-right">Số tiền</th>
+                        <th className="px-4 py-3 text-right">Còn lại</th>
+                        <th className="px-4 py-3">Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-700">
+                      {paymentLogs.filter(l => l.type === 'salary').map((log, i) => (
+                        <tr key={log.id} className="hover:bg-zinc-800/40 transition">
+                          <td className="px-4 py-3 text-zinc-500 text-xs">{i + 1}</td>
+                          <td className="px-4 py-3 text-xs text-zinc-400 font-mono whitespace-nowrap">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
+                          <td className="px-4 py-3 font-semibold text-zinc-200">{log.referenceName}</td>
+                          <td className="px-4 py-3 text-xs text-zinc-400">{log.notes ?? ''}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold ${log.paymentMethod === 'bank' ? 'bg-blue-900/30 text-blue-300' : 'bg-amber-900/30 text-amber-300'}`}>
+                              {log.paymentMethod === 'bank' ? <><Building2 className="w-3 h-3" /> CK</> : <><Banknote className="w-3 h-3" /> Tiền mặt</>}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400">{formatVND(log.amount)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-xs font-bold">
+                            {log.remaining > 0 ? <span className="text-rose-400">{formatVND(log.remaining)}</span> : <span className="text-emerald-400">Đủ</span>}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-zinc-500">{''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Pay Modal (Debt tab) */}
       <AnimatePresence>
         {payingOrder && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-              <h3 className="font-bold text-slate-800 mb-1">Thanh toán phiếu nhập</h3>
-              <p className="text-xs text-slate-500 font-mono mb-4">{payingOrder.id} · {payingOrder.partnerName}</p>
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-sm p-6">
+              <h3 className="font-bold text-zinc-100 mb-1">Thanh toán phiếu nhập</h3>
+              <p className="text-xs text-zinc-400 font-mono mb-4">{payingOrder.id} · {payingOrder.partnerName}</p>
               <div className="space-y-3 mb-5">
-                <div className="flex justify-between text-sm"><span className="text-slate-600">Tổng phiếu:</span><span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-slate-600">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-slate-600">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
-                <div className="border-t border-slate-200 pt-3 space-y-2">
+                <div className="flex justify-between text-sm"><span className="text-zinc-300">Tổng phiếu:</span><span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-zinc-300">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-zinc-300">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
+                <div className="border-t border-zinc-700 pt-3 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={payFull} onChange={e => { setPayFull(e.target.checked); if (e.target.checked) setPayAmount(String(payingOrder.totalAmount - payingOrder.paidAmount)); }} className="w-4 h-4" />
-                    <span className="text-sm font-medium text-slate-700">Thanh toán toàn bộ</span>
+                    <span className="text-sm font-medium text-zinc-300">Thanh toán toàn bộ</span>
                   </label>
-                  {!payFull && (<div><label className="text-xs font-bold text-slate-600 mb-1 block">Số tiền</label><input type="number" min={0} value={payAmount} onChange={e => setPayAmount(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" /></div>)}
+                  {!payFull && (<div><label className="text-xs font-bold text-zinc-300 mb-1 block">Số tiền</label><input type="number" min={0} value={payAmount} onChange={e => setPayAmount(e.target.value)} className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none bg-zinc-800 text-zinc-100 focus:border-blue-500" /></div>)}
                 </div>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-zinc-700 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
                 <button onClick={confirmPay} disabled={paying} className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">{paying ? 'Đang lưu...' : 'Xác nhận'}</button>
               </div>
             </motion.div>
@@ -935,36 +1129,36 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {showSalaryForm && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-              <div className="flex items-center justify-between p-5 border-b border-slate-200">
-                <h3 className="font-bold text-slate-800">{editingSalaryId ? 'Sửa lương' : 'Thêm lương'}</h3>
-                <button onClick={() => setShowSalaryForm(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md">
+              <div className="flex items-center justify-between p-5 border-b border-zinc-700">
+                <h3 className="font-bold text-zinc-100">{editingSalaryId ? 'Sửa lương' : 'Thêm lương'}</h3>
+                <button onClick={() => setShowSalaryForm(false)} className="text-zinc-500 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
               <div className="p-5 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-slate-600 mb-1 block">Họ tên <span className="text-rose-500">*</span></label>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Họ tên <span className="text-rose-500">*</span></label>
                     <input value={salaryForm.fullName} onChange={e => setSalaryForm(f => ({ ...f, fullName: e.target.value }))}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" placeholder="Nguyễn Văn A" />
+                      className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500" placeholder="Nguyễn Văn A" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-600 mb-1 block">Điện thoại</label>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Điện thoại</label>
                     <input value={salaryForm.phone} onChange={e => setSalaryForm(f => ({ ...f, phone: e.target.value }))}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" placeholder="0912..." />
+                      className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" placeholder="0912..." />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-slate-600 mb-1 block">Số tiền (VNĐ) <span className="text-rose-500">*</span></label>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Số tiền (VNĐ) <span className="text-rose-500">*</span></label>
                     <input type="number" min={0} value={salaryForm.amount} onChange={e => setSalaryForm(f => ({ ...f, amount: e.target.value }))}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" placeholder="5000000" />
+                      className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" placeholder="5000000" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-600 mb-1 block">Cách tính</label>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Cách tính</label>
                     <div className="flex gap-2">
                       {(['lump', 'daily'] as const).map(t => (
                         <button key={t} type="button" onClick={() => setSalaryForm(f => ({ ...f, calcType: t }))}
-                          className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition cursor-pointer ${salaryForm.calcType === t ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500'}`}>
+                          className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 transition cursor-pointer ${salaryForm.calcType === t ? 'border-blue-600 bg-blue-900/30 text-blue-300' : 'border-zinc-700 text-zinc-400'}`}>
                           {t === 'lump' ? 'Đợt' : 'Ngày'}
                         </button>
                       ))}
@@ -973,55 +1167,55 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-slate-600 mb-1 block">Từ ngày <span className="text-rose-500">*</span></label>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Từ ngày <span className="text-rose-500">*</span></label>
                     <input type="date" value={salaryForm.dateFrom} onChange={e => setSalaryForm(f => ({ ...f, dateFrom: e.target.value }))}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                      className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none bg-zinc-800 text-zinc-100 focus:border-blue-500" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-600 mb-1 block">Đến ngày <span className="text-rose-500">*</span></label>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Đến ngày <span className="text-rose-500">*</span></label>
                     <input type="date" value={salaryForm.dateTo} onChange={e => setSalaryForm(f => ({ ...f, dateTo: e.target.value }))}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                      className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none bg-zinc-800 text-zinc-100 focus:border-blue-500" />
                   </div>
                 </div>
-                <div className="border border-emerald-200 rounded-xl p-3 space-y-2 bg-emerald-50/40">
+                <div className="border border-emerald-200 rounded-xl p-3 space-y-2 bg-emerald-900/20">
                   <p className="text-xs font-bold text-emerald-800">Tài khoản ngân hàng (để trả lương)</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 mb-1 block">Ngân hàng</label>
+                      <label className="text-[10px] font-bold text-zinc-400 mb-1 block">Ngân hàng</label>
                       <select value={salaryForm.bankName} onChange={e => setSalaryForm(f => ({ ...f, bankName: e.target.value }))}
-                        className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500 cursor-pointer">
+                        className="w-full px-2 py-2 border border-zinc-700 rounded-lg text-xs bg-zinc-800 focus:outline-none focus:border-emerald-500 cursor-pointer">
                         <option value="">— Chọn —</option>
                         {SAL_BANKS.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 mb-1 block">Số tài khoản</label>
+                      <label className="text-[10px] font-bold text-zinc-400 mb-1 block">Số tài khoản</label>
                       <input value={salaryForm.bankAccount} onChange={e => setSalaryForm(f => ({ ...f, bankAccount: e.target.value }))}
-                        className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:border-emerald-500" placeholder="0123456789" />
+                        className="w-full px-2 py-2 border border-zinc-700 rounded-lg text-xs font-mono focus:outline-none focus:border-emerald-500" placeholder="0123456789" />
                     </div>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 mb-1 block">Tên chủ tài khoản</label>
+                    <label className="text-[10px] font-bold text-zinc-400 mb-1 block">Tên chủ tài khoản</label>
                     <input value={salaryForm.bankAccountName} onChange={e => setSalaryForm(f => ({ ...f, bankAccountName: e.target.value }))}
-                      className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-emerald-500" placeholder="NGUYEN VAN A" />
+                      className="w-full px-2 py-2 border border-zinc-700 rounded-lg text-xs focus:outline-none focus:border-emerald-500" placeholder="NGUYEN VAN A" />
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-600 mb-1 block">Ghi chú</label>
+                  <label className="text-xs font-bold text-zinc-300 mb-1 block">Ghi chú</label>
                   <input value={salaryForm.notes} onChange={e => setSalaryForm(f => ({ ...f, notes: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" placeholder="Tháng 6, thưởng, ..." />
+                    className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500" placeholder="Tháng 6, thưởng, ..." />
                 </div>
-                <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-500">
+                <div className="bg-zinc-800 rounded-lg p-3 text-xs text-zinc-400">
                   {salaryForm.calcType === 'lump'
                     ? <p>💡 <strong>Đợt:</strong> Trả nguyên số tiền ({formatVND(Number(salaryForm.amount) || 0)}) bất kể số ngày.</p>
                     : <p>💡 <strong>Ngày:</strong> {formatVND(Number(salaryForm.amount) || 0)} × số ngày giao thoa với kỳ báo cáo.</p>}
                 </div>
               </div>
               {salarySaveError && (
-                <div className="mx-5 mb-3 px-3 py-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium">{salarySaveError}</div>
+                <div className="mx-5 mb-3 px-3 py-2 bg-rose-900/20 border border-rose-700/50 rounded-lg text-xs text-rose-300 font-medium">{salarySaveError}</div>
               )}
-              <div className="flex gap-3 p-5 border-t border-slate-200">
-                <button onClick={() => { setShowSalaryForm(false); setSalarySaveError(''); }} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+              <div className="flex gap-3 p-5 border-t border-zinc-700">
+                <button onClick={() => { setShowSalaryForm(false); setSalarySaveError(''); }} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 hover:bg-zinc-700 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
                 <button onClick={handleSaveSalary} disabled={salarySaving}
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
                   {salarySaving ? 'Đang lưu...' : 'Lưu'}
@@ -1037,14 +1231,14 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {payingSalary && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-sm p-6">
               {salaryPayConfirmed ? (
                 <div className="text-center py-4">
-                  <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <div className="w-16 h-16 bg-emerald-900/40 rounded-full flex items-center justify-center mx-auto mb-3">
                     <Receipt className="w-9 h-9 text-emerald-600" />
                   </div>
                   <h3 className="font-bold text-emerald-700 text-lg mb-1">Đã xác nhận trả lương</h3>
-                  <p className="text-sm text-slate-500 mb-5">Ghi nhận thành công.</p>
+                  <p className="text-sm text-zinc-400 mb-5">Ghi nhận thành công.</p>
                   <button onClick={confirmSalaryPay} disabled={salaryPaySaving}
                     className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
                     {salaryPaySaving ? 'Đang lưu...' : 'Xác nhận & Đóng'}
@@ -1052,43 +1246,43 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                 </div>
               ) : (
                 <>
-                  <h3 className="font-bold text-slate-800 mb-1">Trả lương — {payingSalary.fullName}</h3>
-                  <p className="text-xs text-slate-500 font-mono mb-4">{payingSalary.dateFrom} → {payingSalary.dateTo}</p>
+                  <h3 className="font-bold text-zinc-100 mb-1">Trả lương — {payingSalary.fullName}</h3>
+                  <p className="text-xs text-zinc-400 font-mono mb-4">{payingSalary.dateFrom} → {payingSalary.dateTo}</p>
                   <div className="space-y-2 mb-4 text-sm">
-                    <div className="flex justify-between"><span className="text-slate-600">Tổng lương:</span><span className="font-mono font-bold">{formatVND(payingSalary.amount)}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-600">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingSalary.paidAmount ?? 0)}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-600">Còn lại:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingSalary.amount - (payingSalary.paidAmount ?? 0))}</span></div>
-                    <div className="border-t border-slate-200 pt-3 space-y-2">
+                    <div className="flex justify-between"><span className="text-zinc-300">Tổng lương:</span><span className="font-mono font-bold">{formatVND(payingSalary.amount)}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-300">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingSalary.paidAmount ?? 0)}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-300">Còn lại:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingSalary.amount - (payingSalary.paidAmount ?? 0))}</span></div>
+                    <div className="border-t border-zinc-700 pt-3 space-y-2">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={salaryPayFull} onChange={e => { setSalaryPayFull(e.target.checked); if (e.target.checked) setSalaryPayAmount(String(payingSalary.amount - (payingSalary.paidAmount ?? 0))); }} className="w-4 h-4" />
-                        <span className="text-sm font-medium text-slate-700">Trả toàn bộ còn lại</span>
+                        <span className="text-sm font-medium text-zinc-300">Trả toàn bộ còn lại</span>
                       </label>
                       {!salaryPayFull && (
                         <div>
-                          <label className="text-xs font-bold text-slate-600 mb-1 block">Số tiền</label>
+                          <label className="text-xs font-bold text-zinc-300 mb-1 block">Số tiền</label>
                           <input type="number" min={0} value={salaryPayAmount} onChange={e => setSalaryPayAmount(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" />
+                            className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none bg-zinc-800 text-zinc-100 focus:border-blue-500" />
                         </div>
                       )}
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={salaryPayCash} onChange={e => setSalaryPayCash(e.target.checked)} className="w-4 h-4" />
-                        <span className="text-sm text-slate-600">Trả tiền mặt</span>
+                        <span className="text-sm text-zinc-300">Trả tiền mặt</span>
                       </label>
                     </div>
                   </div>
                   {!salaryPayCash && payingSalary.bankName && payingSalary.bankAccount && Number(salaryPayAmount) > 0 && (
-                    <div className="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">QR chuyển khoản lương</p>
+                    <div className="mb-4 p-3 bg-zinc-800 rounded-xl border border-zinc-700 text-center">
+                      <p className="text-[10px] font-bold text-zinc-400 uppercase mb-2">QR chuyển khoản lương</p>
                       <img src={buildSalaryQR(payingSalary.bankName, payingSalary.bankAccount, salaryPayFull ? payingSalary.amount - (payingSalary.paidAmount ?? 0) : Number(salaryPayAmount), payingSalary.bankAccountName ?? '', `Luong ${payingSalary.fullName}`)} alt="QR lương" className="w-40 h-40 mx-auto rounded-lg object-contain" />
-                      <p className="text-xs text-slate-600 font-mono font-bold mt-2">{payingSalary.bankAccount}</p>
-                      <p className="text-xs text-slate-500">{SAL_BANKS.find(b => b.id === payingSalary.bankName)?.name} · {payingSalary.bankAccountName}</p>
+                      <p className="text-xs text-zinc-300 font-mono font-bold mt-2">{payingSalary.bankAccount}</p>
+                      <p className="text-xs text-zinc-400">{SAL_BANKS.find(b => b.id === payingSalary.bankName)?.name} · {payingSalary.bankAccountName}</p>
                     </div>
                   )}
                   {salaryPayError && (
-                    <div className="mb-3 px-3 py-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium">{salaryPayError}</div>
+                    <div className="mb-3 px-3 py-2 bg-rose-900/20 border border-rose-700/50 rounded-lg text-xs text-rose-300 font-medium">{salaryPayError}</div>
                   )}
                   <div className="flex gap-3">
-                    <button onClick={() => { setPayingSalary(null); setSalaryPayError(''); }} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                    <button onClick={() => { setPayingSalary(null); setSalaryPayError(''); }} className="flex-1 px-4 py-2 border border-zinc-700 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
                     {salaryPayCash ? (
                       <button onClick={confirmSalaryPay} disabled={salaryPaySaving} className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
                         {salaryPaySaving ? 'Đang lưu...' : 'Xác nhận tiền mặt'}
@@ -1111,12 +1305,12 @@ export default function Reports({ invoices, products, isManager = false, onSelec
         {deleteSalaryConfirm && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
-              <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-3"><Trash2 className="w-6 h-6 text-rose-600" /></div>
-              <h3 className="font-bold text-slate-800 mb-2">Xóa bản ghi lương?</h3>
-              <p className="text-sm text-slate-500 mb-5">Hành động này không thể hoàn tác.</p>
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+              <div className="w-12 h-12 bg-rose-900/40 rounded-full flex items-center justify-center mx-auto mb-3"><Trash2 className="w-6 h-6 text-rose-600" /></div>
+              <h3 className="font-bold text-zinc-100 mb-2">Xóa bản ghi lương?</h3>
+              <p className="text-sm text-zinc-400 mb-5">Hành động này không thể hoàn tác.</p>
               <div className="flex gap-3">
-                <button onClick={() => setDeleteSalaryConfirm(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={() => setDeleteSalaryConfirm(null)} className="flex-1 px-4 py-2 border border-zinc-700 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
                 <button onClick={() => handleDeleteSalary(deleteSalaryConfirm)} className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold cursor-pointer">Xóa</button>
               </div>
             </motion.div>
