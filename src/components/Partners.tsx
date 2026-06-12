@@ -58,6 +58,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [payMethod, setPayMethod] = useState<'bank' | 'cash'>('bank');
   const xlsxRef = useRef<HTMLInputElement>(null);
 
@@ -163,6 +164,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
     setSaving(true);
+    setSaveError('');
     try {
       const base: Partial<Partner> = {
         fullName: form.fullName.trim(),
@@ -180,6 +182,8 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
         await onAdd({ id: `part_${Date.now()}`, ...base, createdAt: new Date().toISOString() } as Partner);
       }
       setShowForm(false);
+    } catch (err: any) {
+      setSaveError(err?.message ?? 'Lỗi khi lưu. Vui lòng thử lại.');
     } finally {
       setSaving(false);
     }
@@ -325,6 +329,24 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                           <td colSpan={6} className="px-4 py-3 border-t border-blue-100">
                             {/* Info cards */}
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3 text-xs">
+                              {p.phones.length > 0 && (
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <Phone className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Điện thoại</p>
+                                    {p.phones.map((ph, i) => <p key={i} className="text-slate-700 font-mono">{ph}</p>)}
+                                  </div>
+                                </div>
+                              )}
+                              {p.emails.length > 0 && (
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <Mail className="w-3.5 h-3.5 text-purple-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Email</p>
+                                    {p.emails.map((em, i) => <p key={i} className="text-slate-700">{em}</p>)}
+                                  </div>
+                                </div>
+                              )}
                               {p.address && (
                                 <div className="col-span-2 sm:col-span-3 bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
                                   <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
@@ -348,12 +370,6 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                                 <div className="bg-white rounded-lg border border-slate-200 px-3 py-2">
                                   <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Ghi chú</p>
                                   <p className="text-slate-700">{p.notes}</p>
-                                </div>
-                              )}
-                              {p.phones.length > 1 && (
-                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2">
-                                  <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Điện thoại</p>
-                                  <p className="text-slate-700 font-mono">{p.phones.join(' · ')}</p>
                                 </div>
                               )}
                             </div>
@@ -453,8 +469,11 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                     placeholder="Điều khoản, ghi chú thêm..." />
                 </div>
               </div>
+              {saveError && (
+                <div className="mx-5 mb-3 px-3 py-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium">{saveError}</div>
+              )}
               <div className="flex gap-3 p-5 border-t border-slate-200">
-                <button onClick={() => setShowForm(false)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold transition cursor-pointer">Hủy</button>
+                <button onClick={() => { setShowForm(false); setSaveError(''); }} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold transition cursor-pointer">Hủy</button>
                 <button onClick={handleSave} disabled={saving}
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer">
                   {saving ? 'Đang lưu...' : 'Lưu'}

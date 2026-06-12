@@ -9,7 +9,7 @@ import { INITIAL_PRODUCTS, INITIAL_STORE_CONFIG } from './data';
 import {
   fetchProducts, insertProduct, updateProduct as dbUpdateProduct,
   deleteProduct as dbDeleteProduct,
-  fetchInvoices, insertInvoice,
+  fetchInvoices, insertInvoice, updateInvoice as dbUpdateInvoice,
   fetchStoreConfig, saveStoreConfig,
 } from './lib/db';
 import { getCurrentUser, logout } from './lib/auth';
@@ -157,6 +157,11 @@ export default function App() {
       return p;
     }));
     setInvoices(prev => [...prev, newInvoice]);
+  };
+
+  const handleUpdateInvoice = async (inv: Invoice) => {
+    await dbUpdateInvoice(inv);
+    setInvoices(prev => prev.map(x => x.id === inv.id ? inv : x));
   };
 
   const handleSaveConfig = async (updatedConfig: StoreConfig) => {
@@ -367,6 +372,8 @@ export default function App() {
                 invoices={invoices}
                 products={products}
                 onUpdateProductsStock={handleUpdateProductsStock}
+                onUpdateInvoice={handleUpdateInvoice}
+                onPrintInvoice={setSelectedReprintInvoice}
               />
             )}
             {activeTab === 'reports' && (

@@ -9,17 +9,20 @@ import {
 import Customers from './Customers';
 import Partners from './Partners';
 import PurchaseOrders from './PurchaseOrders';
-import { Users, Handshake, ChevronsUpDown, AlertCircle } from 'lucide-react';
+import Invoices from './Invoices';
+import { Users, Handshake, ChevronsUpDown, AlertCircle, FileText } from 'lucide-react';
 
 interface DataProps {
   invoices: Invoice[];
   products: Product[];
   onUpdateProductsStock: (updates: { id: string; delta: number }[]) => void;
+  onUpdateInvoice?: (inv: Invoice) => Promise<void>;
+  onPrintInvoice?: (inv: Invoice) => void;
 }
 
-type SubTab = 'customers' | 'partners' | 'orders';
+type SubTab = 'customers' | 'partners' | 'orders' | 'invoices';
 
-export default function Data({ invoices, products, onUpdateProductsStock }: DataProps) {
+export default function Data({ invoices, products, onUpdateProductsStock, onUpdateInvoice, onPrintInvoice }: DataProps) {
   const [subTab, setSubTab] = useState<SubTab>('customers');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -94,6 +97,7 @@ export default function Data({ invoices, products, onUpdateProductsStock }: Data
     { id: 'customers', label: 'Khách hàng', icon: <Users className="w-4 h-4" /> },
     { id: 'partners', label: 'Đối tác', icon: <Handshake className="w-4 h-4" /> },
     { id: 'orders', label: 'Xuất nhập hàng', icon: <ChevronsUpDown className="w-4 h-4" /> },
+    { id: 'invoices', label: 'Hóa đơn', icon: <FileText className="w-4 h-4" /> },
   ];
 
   return (
@@ -144,6 +148,19 @@ export default function Data({ invoices, products, onUpdateProductsStock }: Data
               onUpdateProductsStock={onUpdateProductsStock}
               paymentLogs={paymentLogs}
               onPaymentLogAdded={log => setPaymentLogs(prev => [log, ...prev])} />
+          )}
+          {subTab === 'invoices' && onUpdateInvoice && onPrintInvoice && (
+            <Invoices
+              invoices={invoices}
+              products={products}
+              onUpdateInvoice={onUpdateInvoice}
+              onPrintInvoice={onPrintInvoice}
+            />
+          )}
+          {subTab === 'invoices' && (!onUpdateInvoice || !onPrintInvoice) && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-amber-700 text-sm">
+              Không thể tải module hóa đơn. Vui lòng kiểm tra lại cấu hình.
+            </div>
           )}
         </>
       )}

@@ -222,4 +222,8 @@ create table if not exists public.payment_logs (
 );
 
 alter table public.payment_logs enable row level security;
-create policy "public_all_payment_logs" on public.payment_logs for all using (true) with check (true);
+create policy if not exists "public_all_payment_logs" on public.payment_logs for all using (true) with check (true);
+
+-- ── Cột mở rộng cho invoices ──────────────────────────────────
+alter table public.invoices add column if not exists notes   text;
+alter table public.invoices add column if not exists status  text not null default 'completed';

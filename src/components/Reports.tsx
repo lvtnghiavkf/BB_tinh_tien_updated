@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Invoice, Product, PurchaseOrder, SalaryEntry, PaymentLog } from '../types';
 import {
-  TrendingUp, Calendar, FileText, Printer,
+  TrendingUp, Calendar,
   CircleDollarSign, Search, ShoppingBag, Percent, Receipt,
   ArrowDownToLine, Banknote, Wallet, Users, Plus, Pencil, Trash2,
   X, Download, Upload, AlertCircle, Building2, History
@@ -63,9 +63,6 @@ function buildSalaryQR(bankCode: string, account: string, amount: number, name: 
 
 export default function Reports({ invoices, products, isManager = false, onSelectInvoiceForReprint }: ReportsProps) {
   const [reportType, setReportType] = useState<ReportType>('revenue');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [paymentFilter, setPaymentFilter] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'kpi' | 'transactions'>('kpi');
   const [hoveredDataIdx, setHoveredDataIdx] = useState<number | null>(null);
 
   // Debt tab state
@@ -168,12 +165,6 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     ];
   }, [rangeInvoices]);
 
-  const filteredInvoices = useMemo(() =>
-    rangeInvoices.filter(inv => {
-      const matchesSearch = !searchTerm || inv.id.toLowerCase().includes(searchTerm.toLowerCase()) || (inv.customerName && inv.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || (inv.customerPhone && inv.customerPhone.includes(searchTerm));
-      return matchesSearch && (!paymentFilter || inv.paymentMethod === paymentFilter);
-    }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
-    [rangeInvoices, searchTerm, paymentFilter]);
 
   // SVG chart
   const svgDim = { width: 500, height: 200, pL: 60, pR: 20, pT: 20, pB: 30 };
@@ -451,17 +442,8 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       {/* ── REVENUE TAB ─────────────────────────────────── */}
       {reportType === 'revenue' && (
         <>
-          <div className="flex border border-slate-200 rounded-lg bg-white p-1 self-start shadow-xs">
-            <button onClick={() => setActiveTab('kpi')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition inline-flex items-center gap-1.5 cursor-pointer ${activeTab === 'kpi' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}>
-              <TrendingUp className="w-3.5 h-3.5" /> Tổng quan
-            </button>
-            <button onClick={() => setActiveTab('transactions')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition inline-flex items-center gap-1.5 cursor-pointer ${activeTab === 'transactions' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}>
-              <FileText className="w-3.5 h-3.5" /> Lịch sử ({rangeInvoices.length})
-            </button>
-          </div>
-
           <AnimatePresence mode="wait">
-            {activeTab === 'kpi' ? (
+            {true ? (
               <motion.div key="kpi-tab" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
@@ -536,36 +518,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                   )}
                 </div>
               </motion.div>
-            ) : (
-              <motion.div key="transactions-tab" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-4">
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center gap-3">
-                  <div className="relative flex-1 w-full"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none"><Search className="w-4 h-4" /></span><input type="text" placeholder="Tra cứu: mã HD, tên khách, số điện thoại..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-xs sm:text-sm font-medium transition" /></div>
-                  <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} className="w-full sm:w-auto px-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none text-xs sm:text-sm font-medium cursor-pointer"><option value="">Tất cả hình thức</option><option value="CASH">Tiền mặt</option><option value="QR">VietQR Chuyển khoản</option><option value="CARD">Quẹt thẻ ngân hàng</option></select>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-6">
-                  <div className="overflow-x-auto">
-                    {filteredInvoices.length === 0 ? (<div className="p-12 text-center text-slate-400"><FileText className="w-10 h-10 mx-auto stroke-1 text-slate-300 mb-2" /><p className="text-xs font-semibold">Không tìm thấy hóa đơn khớp bộ lọc</p></div>) : (
-                      <table className="w-full border-collapse text-left">
-                        <thead><tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-xs uppercase tracking-wider"><th className="px-5 py-3.5 font-mono">Mã Hóa Đơn</th><th className="px-5 py-3.5">Thời Gian</th><th className="px-5 py-3.5">Khách Hàng</th><th className="px-5 py-3.5">Hàng Hóa</th><th className="px-5 py-3.5 text-right font-mono">Tổng Tiền</th><th className="px-5 py-3.5 text-center">Hình thức</th><th className="px-5 py-3.5 text-right">In lại</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100 text-sm">
-                          {filteredInvoices.map(inv => (
-                            <tr key={inv.id} className="hover:bg-slate-50/55 transition">
-                              <td className="px-5 py-3.5 font-mono font-bold text-slate-800">{inv.id}</td>
-                              <td className="px-5 py-3.5 text-slate-500 whitespace-nowrap text-xs font-mono">{new Date(inv.timestamp).toLocaleDateString('vi-VN')} {new Date(inv.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</td>
-                              <td className="px-5 py-3.5">{inv.customerName ? (<div><p className="font-semibold text-slate-800">{inv.customerName}</p>{inv.customerPhone && <p className="text-[10px] text-slate-400 font-mono">{inv.customerPhone}</p>}</div>) : (<span className="text-slate-400 text-xs">Khách lẻ</span>)}</td>
-                              <td className="px-5 py-3.5 max-w-xs truncate text-xs text-slate-600">{inv.items.map(it => `${it.product.name} (x${it.quantity})`).join(', ')}</td>
-                              <td className="px-5 py-3.5 text-right font-mono font-bold text-slate-800 whitespace-nowrap">{formatVND(inv.finalAmount)}{inv.discountAmount > 0 && <span className="block text-[10px] text-emerald-600 font-normal">-{formatVND(inv.discountAmount)}</span>}</td>
-                              <td className="px-5 py-3.5 text-center whitespace-nowrap text-xs"><span className={`px-2 py-1 rounded-md font-bold text-[10px] ${inv.paymentMethod === 'CASH' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : inv.paymentMethod === 'QR' ? 'bg-blue-50 text-blue-700 border border-blue-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>{inv.paymentMethod === 'CASH' ? 'Tiền mặt' : inv.paymentMethod === 'QR' ? 'VietQR CK' : 'Thẻ'}</span></td>
-                              <td className="px-5 py-3.5 text-right whitespace-nowrap"><button onClick={() => onSelectInvoiceForReprint(inv)} className="px-3 py-1.5 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200 hover:border-blue-200 rounded-lg text-xs font-bold transition inline-flex items-center gap-1 cursor-pointer"><Printer className="w-3.5 h-3.5" /> In lại</button></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            )}
+            ) : null}
           </AnimatePresence>
         </>
       )}

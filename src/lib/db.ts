@@ -1,6 +1,16 @@
 import { supabase } from './supabase';
 import { Product, Invoice, StoreConfig, PaymentMethod, Customer, Partner, PurchaseOrder, PurchaseOrderItem, SalaryEntry, PaymentLog } from '../types';
 
+// ── Invoices (update) ─────────────────────────────────────────────────────────
+
+export async function updateInvoice(inv: Invoice): Promise<void> {
+  const { error } = await supabase.from('invoices').update({
+    notes: inv.notes ?? null,
+    status: inv.status ?? 'completed',
+  }).eq('id', inv.id);
+  if (error) throw error;
+}
+
 // ── Products ──────────────────────────────────────────────────────────────────
 
 export async function fetchProducts(): Promise<Product[]> {
@@ -114,6 +124,8 @@ export async function fetchInvoices(): Promise<Invoice[]> {
     paymentMethod: r.payment_method as PaymentMethod,
     customerName: r.customer_name ?? undefined,
     customerPhone: r.customer_phone ?? undefined,
+    notes: r.notes ?? undefined,
+    status: (r.status ?? 'completed') as 'completed' | 'cancelled',
   }));
 }
 
@@ -128,6 +140,8 @@ export async function insertInvoice(invoice: Invoice): Promise<void> {
     payment_method: invoice.paymentMethod,
     customer_name: invoice.customerName ?? null,
     customer_phone: invoice.customerPhone ?? null,
+    notes: invoice.notes ?? null,
+    status: invoice.status ?? 'completed',
   });
   if (invErr) throw invErr;
 

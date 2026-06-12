@@ -48,6 +48,9 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   const [revisingOrder, setRevisingOrder] = useState<PurchaseOrder | null>(null);
   const [reviseNotes, setReviseNotes] = useState('');
 
+  // History detail modal
+  const [viewingHistoryOrder, setViewingHistoryOrder] = useState<PurchaseOrder | null>(null);
+
   const partnerDropdownRef = useRef<HTMLDivElement>(null);
 
   const filteredPartners = useMemo(() => {
@@ -375,32 +378,51 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                               <span>{o.notes.replace(/^\[DC:[^\]]+\]\s*—?\s*/, '') || 'Phiếu điều chỉnh'}</span>
                             </div>
                           )}
-                          <table className="w-full text-xs">
+                          <div className="overflow-x-auto -mx-4">
+                          <table className="w-full text-xs min-w-[680px] px-4">
                             <thead>
-                              <tr className="text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100">
-                                <th className="pb-2 text-left">Sản phẩm</th>
-                                <th className="pb-2 text-right">SL</th>
-                                <th className="pb-2 text-right">Đơn giá</th>
-                                <th className="pb-2 text-right">Thành tiền</th>
+                              <tr className="text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100 bg-slate-50">
+                                <th className="px-3 pb-2 pt-1 text-center w-8">STT</th>
+                                <th className="px-3 pb-2 pt-1 text-left">Mã hàng</th>
+                                <th className="px-3 pb-2 pt-1 text-left">Tên hàng</th>
+                                <th className="px-3 pb-2 pt-1 text-left">Thương Hiệu</th>
+                                <th className="px-3 pb-2 pt-1 text-center">ĐVT</th>
+                                <th className="px-3 pb-2 pt-1 text-right">Tồn kho</th>
+                                <th className="px-3 pb-2 pt-1 text-right">Giá nhập cũ</th>
+                                <th className="px-3 pb-2 pt-1 text-right">Giá bán</th>
+                                <th className="px-3 pb-2 pt-1 text-right">SL</th>
+                                <th className="px-3 pb-2 pt-1 text-right">Giá nhập</th>
+                                <th className="px-3 pb-2 pt-1 text-right">Thành tiền</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
-                              {o.items.map((it, i) => (
-                                <tr key={i} className="text-slate-700">
-                                  <td className="py-1.5">{it.productName} <span className="text-slate-400 font-mono">({it.sku})</span></td>
-                                  <td className="py-1.5 text-right">{it.quantity}</td>
-                                  <td className="py-1.5 text-right font-mono">{formatVND(it.unitCost)}</td>
-                                  <td className="py-1.5 text-right font-mono font-bold">{formatVND(it.unitCost * it.quantity)}</td>
-                                </tr>
-                              ))}
+                              {o.items.map((it, i) => {
+                                const prod = products.find(p => p.id === it.productId);
+                                return (
+                                  <tr key={i} className="text-slate-700 hover:bg-slate-50/50">
+                                    <td className="px-3 py-2 text-center text-slate-400">{i + 1}</td>
+                                    <td className="px-3 py-2 font-mono text-slate-500">{it.sku}</td>
+                                    <td className="px-3 py-2 font-medium">{it.productName}</td>
+                                    <td className="px-3 py-2 text-slate-500">{prod?.brand || '—'}</td>
+                                    <td className="px-3 py-2 text-center text-slate-500">{prod?.unit || '—'}</td>
+                                    <td className="px-3 py-2 text-right font-mono text-slate-500">{prod ? prod.stock : '—'}</td>
+                                    <td className="px-3 py-2 text-right font-mono text-slate-400">{prod ? formatVND(prod.costPrice) : '—'}</td>
+                                    <td className="px-3 py-2 text-right font-mono text-emerald-600">{prod ? formatVND(prod.sellingPrice) : '—'}</td>
+                                    <td className="px-3 py-2 text-right font-bold">{it.quantity}</td>
+                                    <td className="px-3 py-2 text-right font-mono">{formatVND(it.unitCost)}</td>
+                                    <td className="px-3 py-2 text-right font-mono font-bold text-blue-700">{formatVND(it.unitCost * it.quantity)}</td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                             <tfoot>
-                              <tr className="border-t border-slate-200 font-bold text-slate-800">
-                                <td colSpan={3} className="pt-2 text-right pr-4">Tổng cộng:</td>
-                                <td className="pt-2 text-right font-mono">{formatVND(o.totalAmount)}</td>
+                              <tr className="border-t-2 border-slate-200 font-bold text-slate-800 bg-slate-50">
+                                <td colSpan={10} className="px-3 pt-2 pb-1 text-right">Tổng cộng:</td>
+                                <td className="px-3 pt-2 pb-1 text-right font-mono text-blue-700">{formatVND(o.totalAmount)}</td>
                               </tr>
                             </tfoot>
                           </table>
+                          </div>
                           {o.notes && !o.notes.startsWith('[DC:') && <p className="text-xs text-slate-400 mt-2 italic">{o.notes}</p>}
                           <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
                             {o.type === 'import' && remaining > 0 && (
@@ -452,31 +474,37 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Lịch sử điều chỉnh</p>
                               <div className="space-y-2">
                                 {/* Show root first */}
-                                <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs cursor-pointer hover:border-slate-300 transition"
+                                  onClick={e => { e.stopPropagation(); setViewingHistoryOrder(root); }}>
                                   <div className="flex items-center justify-between mb-1">
                                     <span className="font-bold text-slate-700 font-mono">{root.id}</span>
                                     <span className="text-slate-400">{new Date(root.timestamp).toLocaleDateString('vi-VN')} · Phiếu gốc</span>
                                   </div>
                                   <p className="text-slate-500">{formatVND(root.totalAmount)}{root.notes && !root.notes.startsWith('[DC:') ? ` · ${root.notes}` : ''}</p>
+                                  <p className="text-blue-500 mt-0.5 font-semibold">Nhấn để xem chi tiết →</p>
                                 </div>
                                 {revisions.slice(0, -1).map(rev => (
-                                  <div key={rev.id} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+                                  <div key={rev.id} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs cursor-pointer hover:border-amber-300 transition"
+                                    onClick={e => { e.stopPropagation(); setViewingHistoryOrder(rev); }}>
                                     <div className="flex items-center justify-between mb-1">
                                       <span className="font-bold text-amber-800 font-mono flex items-center gap-1"><GitBranch className="w-3 h-3" />{rev.id}</span>
                                       <span className="text-amber-600">{new Date(rev.timestamp).toLocaleDateString('vi-VN')}</span>
                                     </div>
                                     <p className="text-amber-700">{formatVND(rev.totalAmount)}</p>
                                     {rev.notes?.startsWith('[DC:') && <p className="text-amber-600 mt-0.5">{rev.notes.replace(/^\[DC:[^\]]+\]\s*—?\s*/, '')}</p>}
+                                    <p className="text-blue-500 mt-0.5 font-semibold">Nhấn để xem chi tiết →</p>
                                   </div>
                                 ))}
                                 {/* Current (latest) revision */}
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs">
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs cursor-pointer hover:border-blue-300 transition"
+                                  onClick={e => { e.stopPropagation(); setViewingHistoryOrder(o); }}>
                                   <div className="flex items-center justify-between mb-1">
                                     <span className="font-bold text-blue-800 font-mono flex items-center gap-1"><GitBranch className="w-3 h-3" />{o.id}</span>
                                     <span className="text-blue-600">{new Date(o.timestamp).toLocaleDateString('vi-VN')} · Hiện tại</span>
                                   </div>
                                   <p className="text-blue-700">{formatVND(o.totalAmount)}</p>
                                   {o.notes?.startsWith('[DC:') && <p className="text-blue-600 mt-0.5">{o.notes.replace(/^\[DC:[^\]]+\]\s*—?\s*/, '')}</p>}
+                                  <p className="text-blue-500 mt-0.5 font-semibold">Nhấn để xem chi tiết →</p>
                                 </div>
                               </div>
                             </div>
@@ -592,48 +620,74 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
 
                 {/* Items */}
                 <div>
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-bold text-slate-600">Danh sách hàng hóa</label>
                     <button onClick={() => setDraftItems(prev => [...prev, { productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }])}
                       className="text-xs text-blue-600 hover:text-blue-700 font-bold cursor-pointer flex items-center gap-1">
                       <Plus className="w-3.5 h-3.5" /> Thêm dòng
                     </button>
                   </div>
-                  <div className="space-y-2">
-                    {draftItems.map((item, idx) => (
-                      <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-5">
-                          <select value={item.productId} onChange={e => setItemProduct(idx, e.target.value)}
-                            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer">
-                            <option value="">— Chọn sản phẩm —</option>
-                            {products.map(p => (
-                              <option key={p.id} value={p.id}>
-                                {p.name} | Mã: {p.sku}{p.barcode ? ` | BC: ${p.barcode}` : ''}{p.brand ? ` | ${p.brand}` : ''} | Tồn: {p.stock} {p.unit}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="col-span-2">
-                          <input type="number" min={1} value={item.quantity} onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Number(e.target.value) || 1 } : it))}
-                            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs text-right focus:outline-none focus:border-blue-500" placeholder="SL" />
-                        </div>
-                        <div className="col-span-3">
-                          <input type="number" min={0} value={item.unitCost} onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, unitCost: Number(e.target.value) || 0 } : it))}
-                            className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs text-right font-mono focus:outline-none focus:border-blue-500" placeholder="Đơn giá" />
-                        </div>
-                        <div className="col-span-1 text-right text-xs font-mono text-slate-600">
-                          {(item.quantity * item.unitCost > 0) ? (item.quantity * item.unitCost / 1000).toFixed(0) + 'k' : '—'}
-                        </div>
-                        <div className="col-span-1 flex justify-center">
-                          {draftItems.length > 1 && (
-                            <button onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}
-                              className="text-slate-400 hover:text-rose-600 cursor-pointer transition">
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto -mx-5 px-5">
+                    <table className="w-full text-xs min-w-[700px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                          <th className="px-2 py-2 text-left w-6">#</th>
+                          <th className="px-2 py-2 text-left">Sản phẩm</th>
+                          <th className="px-2 py-2 text-center">Thương Hiệu</th>
+                          <th className="px-2 py-2 text-center">ĐVT</th>
+                          <th className="px-2 py-2 text-right">Tồn kho</th>
+                          <th className="px-2 py-2 text-right">Giá nhập cũ</th>
+                          <th className="px-2 py-2 text-right">Giá bán</th>
+                          <th className="px-2 py-2 text-right w-20">SL</th>
+                          <th className="px-2 py-2 text-right w-28">Giá nhập</th>
+                          <th className="px-2 py-2 text-right">T.Tiền</th>
+                          <th className="px-2 py-2 w-6"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {draftItems.map((item, idx) => {
+                          const prod = item.productId ? products.find(p => p.id === item.productId) : null;
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/50">
+                              <td className="px-2 py-1.5 text-slate-400 text-center">{idx + 1}</td>
+                              <td className="px-2 py-1.5">
+                                <select value={item.productId} onChange={e => setItemProduct(idx, e.target.value)}
+                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[160px]">
+                                  <option value="">— Chọn sản phẩm —</option>
+                                  {products.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-2 py-1.5 text-center text-slate-500">{prod?.brand || '—'}</td>
+                              <td className="px-2 py-1.5 text-center text-slate-500">{prod?.unit || '—'}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-500">{prod ? prod.stock : '—'}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-400">{prod ? (prod.costPrice / 1000).toFixed(0) + 'k' : '—'}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-emerald-600">{prod ? (prod.sellingPrice / 1000).toFixed(0) + 'k' : '—'}</td>
+                              <td className="px-2 py-1.5">
+                                <input type="number" min={0.001} step={0.001} value={item.quantity} onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Number(e.target.value) || 1 } : it))}
+                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-right focus:outline-none focus:border-blue-500" />
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <input type="number" min={0} value={item.unitCost} onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, unitCost: Number(e.target.value) || 0 } : it))}
+                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-right font-mono focus:outline-none focus:border-blue-500" />
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-mono font-bold text-blue-700">
+                                {item.quantity * item.unitCost > 0 ? (item.quantity * item.unitCost / 1000).toFixed(0) + 'k' : '—'}
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                {draftItems.length > 1 && (
+                                  <button onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}
+                                    className="text-slate-400 hover:text-rose-600 cursor-pointer transition">
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                   <div className="flex justify-end mt-3 pt-3 border-t border-slate-200">
                     <div className="text-sm font-bold text-slate-800">
@@ -680,6 +734,87 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                 <button onClick={() => setDeleteConfirm(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
                 <button onClick={async () => { await onDelete(deleteConfirm); setDeleteConfirm(null); }}
                   className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold cursor-pointer">Xóa</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* History Detail Modal */}
+      <AnimatePresence>
+        {viewingHistoryOrder && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[70] overflow-y-auto">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-3xl my-4">
+              <div className="flex items-center justify-between p-5 border-b border-slate-200">
+                <div>
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <GitBranch className="w-4 h-4 text-amber-600" />
+                    Chi tiết phiếu: {viewingHistoryOrder.id}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {viewingHistoryOrder.type === 'import' ? 'Nhập hàng' : 'Xuất hàng'} · {new Date(viewingHistoryOrder.timestamp).toLocaleString('vi-VN')}
+                    {viewingHistoryOrder.partnerName && ` · ${viewingHistoryOrder.partnerName}`}
+                  </p>
+                </div>
+                <button onClick={() => setViewingHistoryOrder(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="p-5 overflow-x-auto">
+                {viewingHistoryOrder.notes?.startsWith('[DC:') && (
+                  <div className="mb-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                    <GitBranch className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>{viewingHistoryOrder.notes.replace(/^\[DC:[^\]]+\]\s*—?\s*/, '') || 'Phiếu điều chỉnh'}</span>
+                  </div>
+                )}
+                <table className="w-full text-xs min-w-[600px]">
+                  <thead>
+                    <tr className="text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100 bg-slate-50">
+                      <th className="px-3 pb-2 pt-1 text-center w-8">STT</th>
+                      <th className="px-3 pb-2 pt-1 text-left">Mã hàng</th>
+                      <th className="px-3 pb-2 pt-1 text-left">Tên hàng</th>
+                      <th className="px-3 pb-2 pt-1 text-left">Thương Hiệu</th>
+                      <th className="px-3 pb-2 pt-1 text-center">ĐVT</th>
+                      <th className="px-3 pb-2 pt-1 text-right">SL</th>
+                      <th className="px-3 pb-2 pt-1 text-right">Giá nhập</th>
+                      <th className="px-3 pb-2 pt-1 text-right">Thành tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {viewingHistoryOrder.items.map((it, i) => {
+                      const prod = products.find(p => p.id === it.productId);
+                      return (
+                        <tr key={i} className="text-slate-700 hover:bg-slate-50/50">
+                          <td className="px-3 py-2 text-center text-slate-400">{i + 1}</td>
+                          <td className="px-3 py-2 font-mono text-slate-500">{it.sku}</td>
+                          <td className="px-3 py-2 font-medium">{it.productName}</td>
+                          <td className="px-3 py-2 text-slate-500">{prod?.brand || '—'}</td>
+                          <td className="px-3 py-2 text-center text-slate-500">{prod?.unit || '—'}</td>
+                          <td className="px-3 py-2 text-right font-bold">{it.quantity}</td>
+                          <td className="px-3 py-2 text-right font-mono">{formatVND(it.unitCost)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-blue-700">{formatVND(it.unitCost * it.quantity)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-200 font-bold bg-slate-50">
+                      <td colSpan={7} className="px-3 pt-2 pb-1 text-right">Tổng cộng:</td>
+                      <td className="px-3 pt-2 pb-1 text-right font-mono text-blue-700">{formatVND(viewingHistoryOrder.totalAmount)}</td>
+                    </tr>
+                    {viewingHistoryOrder.type === 'import' && (
+                      <tr className="text-xs text-slate-500">
+                        <td colSpan={6} className="px-3 py-1 text-right">Đã thanh toán:</td>
+                        <td colSpan={2} className="px-3 py-1 text-right font-mono text-emerald-600">{formatVND(viewingHistoryOrder.paidAmount)}</td>
+                      </tr>
+                    )}
+                  </tfoot>
+                </table>
+                {viewingHistoryOrder.notes && !viewingHistoryOrder.notes.startsWith('[DC:') && (
+                  <p className="text-xs text-slate-400 mt-3 italic">{viewingHistoryOrder.notes}</p>
+                )}
+              </div>
+              <div className="p-5 border-t border-slate-200 flex justify-end">
+                <button onClick={() => setViewingHistoryOrder(null)} className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer">Đóng</button>
               </div>
             </motion.div>
           </div>

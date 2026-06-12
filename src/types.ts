@@ -36,6 +36,8 @@ export interface Invoice {
   paymentMethod: PaymentMethod;
   customerName?: string;
   customerPhone?: string;
+  notes?: string;
+  status?: 'completed' | 'cancelled';
 }
 
 export interface StoreConfig {
