@@ -477,7 +477,11 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                           <select value={item.productId} onChange={e => setItemProduct(idx, e.target.value)}
                             className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer">
                             <option value="">— Chọn sản phẩm —</option>
-                            {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku}){p.brand ? ' — ' + p.brand : ''}</option>)}
+                            {products.map(p => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} | Mã: {p.sku}{p.barcode ? ` | BC: ${p.barcode}` : ''}{p.brand ? ` | ${p.brand}` : ''} | Tồn: {p.stock} {p.unit}
+                              </option>
+                            ))}
                           </select>
                         </div>
                         <div className="col-span-2">

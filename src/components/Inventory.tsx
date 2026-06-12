@@ -619,28 +619,71 @@ export default function Inventory({
                         </td>
                       </tr>
 
-                      {/* Panel mở rộng */}
+                      {/* Panel mở rộng — chi tiết đầy đủ */}
                       {isExpanded && (
-                        <tr className="bg-blue-50/20">
-                          <td colSpan={10} className="px-5 py-3 border-t border-blue-100">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
-                                <span>
-                                  <span className="font-bold text-slate-500">Mã vạch: </span>
-                                  {p.barcode
-                                    ? <span className="font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-700">{p.barcode}</span>
-                                    : <span className="text-slate-300">—</span>}
-                                </span>
-                                <span>
-                                  <span className="font-bold text-slate-500">Trạng thái: </span>
-                                  {isOutOfStock
-                                    ? <span className="text-rose-600 font-bold">Hết hàng</span>
-                                    : isLowStock
-                                      ? <span className="text-amber-600 font-bold">Sắp hết ({p.stock}/{p.minStock})</span>
-                                      : <span className="text-emerald-600 font-bold">Còn hàng ({p.stock})</span>}
+                        <tr className="bg-slate-50/60">
+                          <td colSpan={10} className="px-5 py-4 border-t border-slate-200">
+                            <div className="space-y-3">
+                              {/* Tên + trạng thái */}
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="font-extrabold text-slate-800 text-sm">{p.name}</p>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    Nhóm hàng: <span className="font-semibold text-slate-700">{p.category}</span>
+                                    {p.brand && <> · Nhãn hiệu: <span className="font-semibold text-slate-700">{p.brand}</span></>}
+                                  </p>
+                                </div>
+                                <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full border ${
+                                  isOutOfStock ? 'bg-rose-50 text-rose-600 border-rose-200' :
+                                  isLowStock   ? 'bg-amber-50 text-amber-600 border-amber-200' :
+                                                 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                }`}>
+                                  {isOutOfStock ? 'Hết hàng' : isLowStock ? 'Sắp hết' : 'Còn hàng'}
                                 </span>
                               </div>
-                              <div className="flex flex-wrap gap-2">
+
+                              {/* Lưới thông tin */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Mã SP (nội bộ)</p>
+                                  <p className="font-mono font-bold text-slate-700 text-sm">{p.sku}</p>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Mã vạch (Barcode)</p>
+                                  <p className="font-mono font-bold text-slate-700 text-sm">
+                                    {p.barcode || <span className="text-slate-300 font-normal text-xs">Chưa có</span>}
+                                  </p>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Tồn kho</p>
+                                  <p className={`font-mono font-bold text-sm ${isOutOfStock ? 'text-rose-600' : isLowStock ? 'text-amber-600' : 'text-slate-700'}`}>
+                                    {p.stock} <span className="text-slate-400 font-normal text-xs">{p.unit}</span>
+                                  </p>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Định mức tồn tối thiểu</p>
+                                  <p className="font-mono font-bold text-slate-700 text-sm">{p.minStock} <span className="text-slate-400 font-normal text-xs">{p.unit}</span></p>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Giá vốn</p>
+                                  <p className="font-mono font-bold text-slate-600 text-sm">{formatVND(p.costPrice)}</p>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Giá bán</p>
+                                  <p className="font-mono font-bold text-slate-800 text-sm">{formatVND(p.sellingPrice)}</p>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Thương hiệu</p>
+                                  <p className="font-bold text-slate-700 text-sm">{p.brand || <span className="text-slate-300 font-normal text-xs">—</span>}</p>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Đơn vị tính</p>
+                                  <p className="font-bold text-slate-700 text-sm">{p.unit}</p>
+                                </div>
+                              </div>
+
+                              {/* Nút thao tác */}
+                              <div className="flex flex-wrap gap-2 pt-1">
                                 <button onClick={(e) => { e.stopPropagation(); setRestockProduct(p); setRestockAmount(10); }}
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
                                   <ArrowUpRight className="w-3.5 h-3.5" /> Nhập kho
@@ -660,7 +703,7 @@ export default function Inventory({
                                 </button>
                                 <button onClick={(e) => {
                                   e.stopPropagation();
-                                  if (confirm(`Bạn chắc chắn muốn xóa sản phẩm "${p.name}" không?`)) onDeleteProduct(p.id);
+                                  if (confirm(`Xóa vĩnh viễn "${p.name}"?`)) onDeleteProduct(p.id);
                                 }}
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
                                   <Trash2 className="w-3.5 h-3.5" /> Xóa
@@ -698,7 +741,7 @@ export default function Inventory({
               <form onSubmit={handleSaveProduct} className="p-5 space-y-4 overflow-y-auto max-h-[80vh]">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1">MÃ SKU / MÃ SP</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">MÃ SP (NỘI BỘ)</label>
                     <input type="text" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SP00001"
                       className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-slate-50 font-mono text-xs focus:outline-none" />
                   </div>
@@ -723,8 +766,8 @@ export default function Inventory({
                       className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-slate-500/10 focus:border-slate-400 outline-none transition" />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1">MÃ VẠCH (BARCODE)</label>
-                    <input type="text" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="Để trống nếu dùng SKU"
+                    <label className="block text-xs font-bold text-slate-500 mb-1">MÃ VẠCH (IN TRÊN BAO BÌ)</label>
+                    <input type="text" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="VD: 8938540313484"
                       className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-mono focus:ring-2 focus:ring-slate-500/10 focus:border-slate-400 outline-none transition" />
                   </div>
                 </div>

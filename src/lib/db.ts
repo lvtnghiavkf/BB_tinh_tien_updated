@@ -26,41 +26,31 @@ export async function fetchProducts(): Promise<Product[]> {
 }
 
 export async function insertProduct(p: Product): Promise<void> {
-  const { error } = await supabase.from('products').insert({
-    id: p.id,
-    sku: p.sku,
-    name: p.name,
-    brand: p.brand ?? '',
-    category: p.category,
-    cost_price: p.costPrice,
-    selling_price: p.sellingPrice,
-    stock: p.stock,
-    min_stock: p.minStock,
-    unit: p.unit,
+  const payload: Record<string, any> = {
+    id: p.id, sku: p.sku, name: p.name,
+    brand: p.brand ?? '', category: p.category,
+    cost_price: p.costPrice, selling_price: p.sellingPrice,
+    stock: p.stock, min_stock: p.minStock, unit: p.unit,
     hidden: p.hidden ?? false,
-    barcode: p.barcode ?? null,
-  });
+  };
+  // Only include barcode if the value is explicitly set (column may not exist yet)
+  if (p.barcode !== undefined) payload.barcode = p.barcode || null;
+  const { error } = await supabase.from('products').insert(payload);
   if (error) throw error;
 }
 
 export async function updateProduct(p: Product): Promise<void> {
-  const { error } = await supabase
-    .from('products')
-    .update({
-      sku: p.sku,
-      name: p.name,
-      brand: p.brand ?? '',
-      category: p.category,
-      cost_price: p.costPrice,
-      selling_price: p.sellingPrice,
-      stock: p.stock,
-      min_stock: p.minStock,
-      unit: p.unit,
-      hidden: p.hidden ?? false,
-      barcode: p.barcode ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', p.id);
+  const payload: Record<string, any> = {
+    sku: p.sku, name: p.name, brand: p.brand ?? '',
+    category: p.category, cost_price: p.costPrice,
+    selling_price: p.sellingPrice, stock: p.stock,
+    min_stock: p.minStock, unit: p.unit,
+    hidden: p.hidden ?? false,
+    updated_at: new Date().toISOString(),
+  };
+  // Only include barcode if the value is explicitly set (column may not exist yet)
+  if (p.barcode !== undefined) payload.barcode = p.barcode || null;
+  const { error } = await supabase.from('products').update(payload).eq('id', p.id);
   if (error) throw error;
 }
 
@@ -281,18 +271,19 @@ export async function fetchPurchaseOrders(): Promise<PurchaseOrder[]> {
 }
 
 export async function insertPurchaseOrder(o: PurchaseOrder): Promise<void> {
-  const { error: oErr } = await supabase.from('purchase_orders').insert({
-    id: o.id,
-    type: o.type,
+  const payload: Record<string, any> = {
+    id: o.id, type: o.type,
     partner_id: o.partnerId || null,
     partner_name: o.partnerName || null,
     timestamp: o.timestamp,
     total_amount: o.totalAmount,
     paid_amount: o.paidAmount,
     notes: o.notes ?? null,
-    parent_id: o.parentId ?? null,
-    revision_note: o.revisionNote ?? null,
-  });
+  };
+  // Only include revision fields if set (columns may not exist yet)
+  if (o.parentId !== undefined) payload.parent_id = o.parentId;
+  if (o.revisionNote !== undefined) payload.revision_note = o.revisionNote;
+  const { error: oErr } = await supabase.from('purchase_orders').insert(payload);
   if (oErr) throw oErr;
 
   if (o.items.length > 0) {
