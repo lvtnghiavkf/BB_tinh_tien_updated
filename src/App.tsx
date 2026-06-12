@@ -365,6 +365,10 @@ export default function App() {
                 onUpdateProduct={handleUpdateProduct}
                 onDeleteProduct={handleDeleteProduct}
                 onRestockProduct={handleRestockProduct}
+                invoices={invoices}
+                onUpdateInvoice={handleUpdateInvoice}
+                onPrintInvoice={setSelectedReprintInvoice}
+                onUpdateProductsStock={handleUpdateProductsStock}
               />
             )}
             {activeTab === 'data' && isManager && (

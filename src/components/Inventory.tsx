@@ -5,14 +5,17 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Product } from '../types';
+import { Product, Invoice } from '../types';
 import {
   Plus, Search, Edit2, Trash2, Box, ArrowUpRight,
   AlertTriangle, RotateCcw, PackageCheck, PackageX, DollarSign,
   Eye, EyeOff, Download, Upload, FileSpreadsheet, Tag, Pencil,
-  ChevronDown, Copy, ArrowUpDown, ChevronUp
+  ChevronDown, Copy, ArrowUpDown, ChevronUp,
+  X, Ban, Printer, BookOpen,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+type LedgerEditItem = { productId: string; name: string; sku: string; price: number; cost: number; qty: number };
 
 interface InventoryProps {
   products: Product[];
@@ -20,6 +23,10 @@ interface InventoryProps {
   onUpdateProduct: (product: Product) => void;
   onDeleteProduct: (id: string) => void;
   onRestockProduct: (id: string, amount: number) => void;
+  invoices?: Invoice[];
+  onUpdateInvoice?: (inv: Invoice) => Promise<void>;
+  onPrintInvoice?: (inv: Invoice) => void;
+  onUpdateProductsStock?: (updates: { id: string; delta: number }[]) => Promise<void> | void;
 }
 
 const COL = {
@@ -41,7 +48,11 @@ export default function Inventory({
   onAddProduct,
   onUpdateProduct,
   onDeleteProduct,
-  onRestockProduct
+  onRestockProduct,
+  invoices = [],
+  onUpdateInvoice,
+  onPrintInvoice,
+  onUpdateProductsStock,
 }: InventoryProps) {
   const categories = Array.from(new Set(products.map((p) => p.category)));
 
@@ -66,6 +77,18 @@ export default function Inventory({
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
   const [restockAmount, setRestockAmount] = useState<number>(10);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+
+  // Thẻ kho
+  const [expandedTab, setExpandedTab] = useState<'info' | 'ledger'>('info');
+  const [ledgerInvoice, setLedgerInvoice] = useState<Invoice | null>(null);
+  const [ledgerMode, setLedgerMode] = useState<'view' | 'edit' | 'confirming-cancel'>('view');
+  const [ledgerSaving, setLedgerSaving] = useState(false);
+  const [ledgerError, setLedgerError] = useState('');
+  const [lEditName, setLEditName] = useState('');
+  const [lEditPhone, setLEditPhone] = useState('');
+  const [lEditPm, setLEditPm] = useState('CASH');
+  const [lEditDisc, setLEditDisc] = useState(0);
+  const [lEditItems, setLEditItems] = useState<LedgerEditItem[]>([]);
 
   // Trường form sản phẩm
   const [sku, setSku] = useState('');
@@ -131,6 +154,118 @@ export default function Inventory({
     sortedProducts.length > 0 && sortedProducts.every((p) => selectedIds.has(p.id));
 
   const formatVND = (val: number) => val.toLocaleString('vi-VN') + ' ₫';
+  const PM_LABEL_INV: Record<string, string> = { CASH: 'Tiền mặt', QR: 'VietQR CK', CARD: 'Quẹt thẻ' };
+
+  // ── Thẻ kho — tính tồn cuối cho sản phẩm đang mở rộng ───────────────────────
+  const ledgerEntries = useMemo(() => {
+    if (!expandedId) return [];
+    const ep = products.find(pr => pr.id === expandedId);
+    if (!ep) return [];
+    const entries: { inv: Invoice; qty: number; unitPrice: number }[] = [];
+    invoices.forEach(inv => {
+      const item = inv.items.find(it => it.product.id === expandedId);
+      if (item) entries.push({ inv, qty: item.quantity, unitPrice: item.product.sellingPrice });
+    });
+    entries.sort((a, b) => new Date(b.inv.timestamp).getTime() - new Date(a.inv.timestamp).getTime());
+    let running = ep.stock;
+    const result = entries.map(e => {
+      const tonCuoi = running;
+      running += e.qty;
+      return { ...e, tonCuoi };
+    });
+    return result.reverse();
+  }, [invoices, expandedId, products]);
+
+  function openLedgerInvoice(inv: Invoice) {
+    setLedgerInvoice(inv); setLedgerMode('view'); setLedgerError('');
+  }
+
+  function openLedgerEdit() {
+    if (!ledgerInvoice) return;
+    setLEditName(ledgerInvoice.customerName ?? '');
+    setLEditPhone(ledgerInvoice.customerPhone ?? '');
+    setLEditPm(ledgerInvoice.paymentMethod);
+    setLEditDisc(ledgerInvoice.discountPercent);
+    setLEditItems(ledgerInvoice.items.map(it => ({
+      productId: it.product.id, name: it.product.name, sku: it.product.sku,
+      price: it.product.sellingPrice, cost: it.product.costPrice, qty: it.quantity,
+    })));
+    setLedgerError('');
+    setLedgerMode('edit');
+  }
+
+  function addLedgerEditProduct(productId: string) {
+    const prod = products.find(p => p.id === productId);
+    if (!prod) return;
+    const idx = lEditItems.findIndex(it => it.productId === productId);
+    if (idx >= 0) {
+      setLEditItems(prev => prev.map((it, i) => i === idx ? { ...it, qty: it.qty + 1 } : it));
+    } else {
+      setLEditItems(prev => [...prev, { productId: prod.id, name: prod.name, sku: prod.sku, price: prod.sellingPrice, cost: prod.costPrice, qty: 1 }]);
+    }
+  }
+
+  async function doLedgerCancel() {
+    if (!ledgerInvoice || !onUpdateInvoice) return;
+    setLedgerSaving(true); setLedgerError('');
+    try {
+      const updated = { ...ledgerInvoice, status: 'cancelled' as const };
+      await onUpdateInvoice(updated);
+      setLedgerInvoice(updated);
+      setLedgerMode('view');
+    } catch (e: any) {
+      setLedgerError(e?.message ?? 'Lỗi khi hủy hóa đơn');
+    } finally {
+      setLedgerSaving(false);
+    }
+  }
+
+  async function saveLedgerEdit() {
+    if (!ledgerInvoice || !onUpdateInvoice) return;
+    const valid = lEditItems.filter(it => it.qty > 0);
+    if (!valid.length) { setLedgerError('Cần ít nhất 1 sản phẩm'); return; }
+    setLedgerSaving(true); setLedgerError('');
+    try {
+      if (onUpdateProductsStock) {
+        const oldMap = new Map(ledgerInvoice.items.map(it => [it.product.id, it.quantity]));
+        const newMap = new Map(valid.map(it => [it.productId, it.qty]));
+        const deltas: { id: string; delta: number }[] = [];
+        oldMap.forEach((oldQty, id) => {
+          const newQty = newMap.get(id) ?? 0;
+          if (oldQty !== newQty) deltas.push({ id, delta: oldQty - newQty });
+        });
+        newMap.forEach((newQty, id) => {
+          if (!oldMap.has(id)) deltas.push({ id, delta: -newQty });
+        });
+        if (deltas.length) await onUpdateProductsStock(deltas);
+      }
+      const lTotal = valid.reduce((s, it) => s + it.price * it.qty, 0);
+      const lDiscAmt = Math.round(lTotal * lEditDisc / 100);
+      const updated: Invoice = {
+        ...ledgerInvoice,
+        customerName: lEditName.trim() || undefined,
+        customerPhone: lEditPhone.trim() || undefined,
+        paymentMethod: lEditPm as 'CASH' | 'QR' | 'CARD',
+        discountPercent: lEditDisc,
+        discountAmount: lDiscAmt,
+        totalAmount: lTotal,
+        finalAmount: lTotal - lDiscAmt,
+        items: valid.map(it => {
+          const orig = ledgerInvoice.items.find(x => x.product.id === it.productId);
+          if (orig) return { ...orig, quantity: it.qty };
+          const prod = products.find(p => p.id === it.productId)!;
+          return { product: prod, quantity: it.qty };
+        }),
+      };
+      await onUpdateInvoice(updated);
+      setLedgerInvoice(updated);
+      setLedgerMode('view');
+    } catch (e: any) {
+      setLedgerError(e?.message ?? 'Lỗi khi lưu');
+    } finally {
+      setLedgerSaving(false);
+    }
+  }
 
   // ── Sắp xếp cột ─────────────────────────────────────────────────────────────
   function toggleSort(field: 'sku' | 'brand' | 'category') {
@@ -572,7 +707,7 @@ export default function Inventory({
                     <React.Fragment key={p.id}>
                       <tr
                         className={`transition text-sm cursor-pointer ${isSelected ? 'bg-blue-900/20' : isExpanded ? 'bg-amber-950/30' : 'hover:bg-zinc-800/40'} ${p.hidden ? 'opacity-55' : ''}`}
-                        onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                        onClick={() => { if (isExpanded) { setExpandedId(null); } else { setExpandedId(p.id); setExpandedTab('info'); } }}
                       >
                         <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(p.id)}
@@ -622,7 +757,13 @@ export default function Inventory({
                       {/* Panel mở rộng — chi tiết đầy đủ */}
                       {isExpanded && (
                         <tr className="bg-zinc-900">
-                          <td colSpan={10} className="px-5 py-4 border-t border-zinc-700">
+                          <td colSpan={10} className="px-5 py-4 border-t border-zinc-700" onClick={e => e.stopPropagation()}>
+                            {/* Tab bar */}
+                            <div className="flex border-b border-zinc-700 mb-4">
+                              <button onClick={() => setExpandedTab('info')} className={`px-4 py-2 text-xs font-bold transition border-b-2 -mb-px ${expandedTab === 'info' ? 'border-amber-400 text-amber-400' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Thông tin</button>
+                              <button onClick={() => setExpandedTab('ledger')} className={`px-4 py-2 text-xs font-bold transition border-b-2 -mb-px flex items-center gap-1.5 ${expandedTab === 'ledger' ? 'border-amber-400 text-amber-400' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}><BookOpen className="w-3.5 h-3.5" /> Thẻ kho</button>
+                            </div>
+                            {expandedTab === 'info' && (
                             <div className="space-y-3">
                               {/* Tên + trạng thái */}
                               <div className="flex items-start justify-between gap-3">
@@ -710,6 +851,65 @@ export default function Inventory({
                                 </button>
                               </div>
                             </div>
+                            )}
+                            {expandedTab === 'ledger' && (
+                              <div>
+                                {ledgerEntries.length === 0 ? (
+                                  <div className="text-center py-10 text-zinc-500">
+                                    <BookOpen className="w-8 h-8 mx-auto stroke-1 mb-3" />
+                                    <p className="text-xs font-semibold">Chưa có giao dịch bán nào cho sản phẩm này</p>
+                                  </div>
+                                ) : (
+                                  <div className="overflow-x-auto rounded-xl border border-zinc-700">
+                                    <table className="w-full text-xs text-left">
+                                      <thead className="bg-zinc-800 border-b border-zinc-700 text-zinc-400 uppercase tracking-wider font-bold">
+                                        <tr>
+                                          <th className="px-3 py-2">Chứng từ</th>
+                                          <th className="px-3 py-2">Thời gian</th>
+                                          <th className="px-3 py-2">Khách hàng</th>
+                                          <th className="px-3 py-2 text-center">HTTT</th>
+                                          <th className="px-3 py-2 text-right">Giá GD</th>
+                                          <th className="px-3 py-2 text-right">Giảm giá</th>
+                                          <th className="px-3 py-2 text-right">Số lượng</th>
+                                          <th className="px-3 py-2 text-right">Tồn cuối</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-zinc-800">
+                                        {ledgerEntries.map(({ inv, qty, unitPrice, tonCuoi }) => {
+                                          const cancelled = (inv.status ?? 'completed') === 'cancelled';
+                                          return (
+                                            <tr key={inv.id} className={`transition ${cancelled ? 'opacity-50' : 'hover:bg-zinc-800/40'}`}>
+                                              <td className="px-3 py-2.5">
+                                                <button onClick={() => openLedgerInvoice(inv)}
+                                                  className="font-mono font-bold text-amber-400 hover:text-amber-300 hover:underline cursor-pointer">
+                                                  {inv.id}
+                                                </button>
+                                                {cancelled && <span className="ml-1.5 text-[9px] text-rose-400 font-bold border border-rose-700/50 rounded px-1 py-0.5">Hủy</span>}
+                                              </td>
+                                              <td className="px-3 py-2.5 text-zinc-400 whitespace-nowrap font-mono">
+                                                {new Date(inv.timestamp).toLocaleDateString('vi-VN')} {new Date(inv.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                              </td>
+                                              <td className="px-3 py-2.5 text-zinc-300">
+                                                {inv.customerName || <span className="text-zinc-500 italic">Khách lẻ</span>}
+                                              </td>
+                                              <td className="px-3 py-2.5 text-center text-zinc-400 whitespace-nowrap">
+                                                {PM_LABEL_INV[inv.paymentMethod] ?? inv.paymentMethod}
+                                              </td>
+                                              <td className="px-3 py-2.5 text-right font-mono text-amber-400">{formatVND(unitPrice)}</td>
+                                              <td className="px-3 py-2.5 text-right font-mono text-zinc-400">
+                                                {inv.discountPercent > 0 ? `${inv.discountPercent}%` : inv.discountAmount > 0 ? formatVND(inv.discountAmount) : '—'}
+                                              </td>
+                                              <td className="px-3 py-2.5 text-right font-mono font-bold text-rose-400">−{qty}</td>
+                                              <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">{tonCuoi}</td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       )}
@@ -871,6 +1071,250 @@ export default function Inventory({
                   <button type="submit" className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer">Áp dụng cho {selectedProducts.length} SP</button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal xem hóa đơn từ Thẻ kho */}
+      <AnimatePresence>
+        {ledgerInvoice && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]"
+            onClick={() => { if (!ledgerSaving) { setLedgerInvoice(null); setLedgerMode('view'); } }}>
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={e => e.stopPropagation()}>
+
+              {ledgerMode !== 'edit' ? (
+                // VIEW / CANCEL CONFIRM
+                <>
+                  <div className="sticky top-0 bg-zinc-900 px-5 py-4 border-b border-zinc-700 flex items-center justify-between z-10">
+                    <div>
+                      <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-0.5">Hóa đơn</p>
+                      <h3 className="font-mono font-bold text-amber-400 text-lg">{ledgerInvoice.id}</h3>
+                      <p className="text-xs text-zinc-500 font-mono">{new Date(ledgerInvoice.timestamp).toLocaleString('vi-VN')}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(ledgerInvoice.status ?? 'completed') === 'cancelled'
+                        ? <span className="text-xs font-bold text-rose-400 border border-rose-700 rounded-lg px-2.5 py-1">Đã hủy</span>
+                        : <span className="text-xs font-bold text-emerald-400 border border-emerald-700 rounded-lg px-2.5 py-1">Hoàn thành</span>}
+                      <button onClick={() => { setLedgerInvoice(null); setLedgerMode('view'); }}
+                        className="text-zinc-500 hover:text-zinc-300 p-1.5 rounded-lg hover:bg-zinc-800 transition cursor-pointer">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-5 space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5">
+                        <p className="text-[10px] text-zinc-500 uppercase font-bold mb-0.5">Khách hàng</p>
+                        <p className="font-semibold text-amber-300 text-sm">{ledgerInvoice.customerName || 'Khách lẻ'}</p>
+                        {ledgerInvoice.customerPhone && <p className="text-xs text-zinc-500 font-mono">{ledgerInvoice.customerPhone}</p>}
+                      </div>
+                      <div className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5">
+                        <p className="text-[10px] text-zinc-500 uppercase font-bold mb-0.5">Hình thức TT</p>
+                        <p className="font-semibold text-amber-300 text-sm">{PM_LABEL_INV[ledgerInvoice.paymentMethod] ?? ledgerInvoice.paymentMethod}</p>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-zinc-700">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-zinc-800 border-b border-zinc-700 text-zinc-400 uppercase font-bold tracking-wider">
+                          <tr>
+                            <th className="px-3 py-2">Hàng hóa</th>
+                            <th className="px-3 py-2 text-center">SL</th>
+                            <th className="px-3 py-2 text-right">Đơn giá</th>
+                            <th className="px-3 py-2 text-right">Thành tiền</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-800">
+                          {ledgerInvoice.items.map((it, i) => (
+                            <tr key={i} className={`${it.product.id === expandedId ? 'bg-amber-950/20' : 'bg-zinc-900'}`}>
+                              <td className="px-3 py-2">
+                                <p className="font-semibold text-amber-400">{it.product.name}</p>
+                                <p className="text-[10px] text-zinc-500 font-mono">{it.product.sku}</p>
+                              </td>
+                              <td className="px-3 py-2 text-center font-bold text-amber-300">{it.quantity}</td>
+                              <td className="px-3 py-2 text-right font-mono text-zinc-400">{formatVND(it.product.sellingPrice)}</td>
+                              <td className="px-3 py-2 text-right font-mono font-bold text-amber-400">{formatVND(it.product.sellingPrice * it.quantity)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 space-y-1.5">
+                      <div className="flex justify-between text-zinc-400 text-xs">
+                        <span>Tổng tiền hàng</span>
+                        <span className="font-mono">{formatVND(ledgerInvoice.totalAmount)}</span>
+                      </div>
+                      {ledgerInvoice.discountAmount > 0 && (
+                        <div className="flex justify-between text-emerald-400 text-xs">
+                          <span>Giảm giá {ledgerInvoice.discountPercent > 0 ? `(${ledgerInvoice.discountPercent}%)` : ''}</span>
+                          <span className="font-mono">−{formatVND(ledgerInvoice.discountAmount)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-amber-400 font-bold border-t border-zinc-700 pt-1.5">
+                        <span className="text-sm">Thành tiền</span>
+                        <span className="font-mono text-base">{formatVND(ledgerInvoice.finalAmount)}</span>
+                      </div>
+                    </div>
+
+                    {ledgerInvoice.notes && (
+                      <div className="bg-zinc-800 border border-zinc-600 rounded-xl px-4 py-2.5">
+                        <p className="text-[10px] text-zinc-500 uppercase font-bold mb-0.5">Ghi chú</p>
+                        <p className="text-sm text-zinc-300">{ledgerInvoice.notes}</p>
+                      </div>
+                    )}
+
+                    {ledgerMode === 'confirming-cancel' && (
+                      <div className="bg-rose-950/30 border border-rose-800 rounded-xl px-4 py-3 space-y-3">
+                        <p className="text-sm font-bold text-rose-300">Xác nhận hủy hóa đơn {ledgerInvoice.id}?</p>
+                        <p className="text-xs text-rose-400/70">Lưu ý: Tồn kho sẽ KHÔNG được cộng lại tự động khi hủy.</p>
+                        {ledgerError && <p className="text-xs text-rose-400 font-medium">{ledgerError}</p>}
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => setLedgerMode('view')} disabled={ledgerSaving}
+                            className="px-3 py-1.5 border border-zinc-600 text-zinc-400 hover:text-zinc-200 rounded-lg text-xs font-bold transition cursor-pointer">
+                            Quay lại
+                          </button>
+                          <button onClick={doLedgerCancel} disabled={ledgerSaving}
+                            className="px-4 py-1.5 bg-rose-700 hover:bg-rose-600 text-white rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
+                            {ledgerSaving ? 'Đang xử lý...' : <><Ban className="w-3.5 h-3.5" /> Xác nhận hủy</>}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {(ledgerInvoice.status ?? 'completed') !== 'cancelled' && ledgerMode === 'view' && (
+                      <div className="flex flex-wrap gap-2 pt-1 border-t border-zinc-700">
+                        {onPrintInvoice && (
+                          <button onClick={() => onPrintInvoice(ledgerInvoice)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs font-bold rounded-lg transition cursor-pointer">
+                            <Printer className="w-3.5 h-3.5" /> In hóa đơn
+                          </button>
+                        )}
+                        {onUpdateInvoice && (
+                          <button onClick={openLedgerEdit}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition cursor-pointer">
+                            <Edit2 className="w-3.5 h-3.5" /> Điều chỉnh
+                          </button>
+                        )}
+                        {onUpdateInvoice && (
+                          <button onClick={() => setLedgerMode('confirming-cancel')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-700 hover:bg-rose-600 text-white text-xs font-bold rounded-lg transition cursor-pointer">
+                            <Ban className="w-3.5 h-3.5" /> Hủy hóa đơn
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                // EDIT MODE
+                <div className="p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-zinc-700 pb-3">
+                    <h3 className="font-bold text-amber-400">Điều chỉnh: <span className="font-mono">{ledgerInvoice.id}</span></h3>
+                    <button onClick={() => setLedgerMode('view')} className="text-zinc-500 hover:text-zinc-300 p-1.5 hover:bg-zinc-800 rounded-lg transition cursor-pointer">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Khách hàng</label>
+                      <input value={lEditName} onChange={e => setLEditName(e.target.value)} placeholder="Tên khách"
+                        className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-amber-400 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Số điện thoại</label>
+                      <input value={lEditPhone} onChange={e => setLEditPhone(e.target.value)} placeholder="SĐT"
+                        className="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-amber-400 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Hình thức thanh toán</label>
+                    <div className="flex gap-2">
+                      {(['CASH', 'QR', 'CARD'] as const).map(pm => (
+                        <button key={pm} onClick={() => setLEditPm(pm)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${lEditPm === pm ? 'bg-amber-500 text-zinc-900 border-amber-500' : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}>
+                          {PM_LABEL_INV[pm]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Giảm giá (%)</label>
+                    <input type="number" min="0" max="100" value={lEditDisc || ''} onChange={e => setLEditDisc(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-32 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-xs font-mono text-amber-400 focus:outline-none focus:border-amber-500" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase">Hàng hóa</p>
+                    {lEditItems.map((it, i) => (
+                      <div key={it.productId} className="flex items-center gap-2 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-amber-400 text-xs truncate">{it.name}</p>
+                          <p className="text-[10px] text-zinc-500 font-mono">{it.sku}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => setLEditItems(prev => prev.map((x, j) => j === i ? { ...x, qty: Math.max(0, x.qty - 1) } : x))}
+                            className="w-6 h-6 bg-zinc-700 hover:bg-zinc-600 rounded text-xs font-bold cursor-pointer text-zinc-300">−</button>
+                          <span className="w-8 text-center font-mono font-bold text-amber-400 text-sm">{it.qty}</span>
+                          <button onClick={() => setLEditItems(prev => prev.map((x, j) => j === i ? { ...x, qty: x.qty + 1 } : x))}
+                            className="w-6 h-6 bg-zinc-700 hover:bg-zinc-600 rounded text-xs font-bold cursor-pointer text-zinc-300">+</button>
+                          <button onClick={() => setLEditItems(prev => prev.filter((_, j) => j !== i))}
+                            className="w-6 h-6 bg-rose-900/40 hover:bg-rose-900/70 text-rose-400 rounded text-xs cursor-pointer flex items-center justify-center">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <p className="font-mono text-amber-400 text-xs w-24 text-right shrink-0">{formatVND(it.price * it.qty)}</p>
+                      </div>
+                    ))}
+                    <select onChange={e => { if (e.target.value) { addLedgerEditProduct(e.target.value); (e.target as HTMLSelectElement).value = ''; } }}
+                      className="w-full px-3 py-1.5 bg-zinc-800 border border-dashed border-zinc-600 rounded-lg text-xs text-zinc-400 focus:outline-none cursor-pointer">
+                      <option value="">+ Thêm sản phẩm...</option>
+                      {products.filter(p => !p.hidden).map(p => (
+                        <option key={p.id} value={p.id}>{p.name} — {formatVND(p.sellingPrice)}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {(() => {
+                    const t = lEditItems.reduce((s, it) => s + it.price * it.qty, 0);
+                    const d = Math.round(t * lEditDisc / 100);
+                    return (
+                      <div className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 space-y-1 text-xs">
+                        <div className="flex justify-between text-zinc-400">
+                          <span>Tổng hàng</span><span className="font-mono">{formatVND(t)}</span>
+                        </div>
+                        {d > 0 && <div className="flex justify-between text-emerald-400">
+                          <span>Giảm giá ({lEditDisc}%)</span><span className="font-mono">−{formatVND(d)}</span>
+                        </div>}
+                        <div className="flex justify-between text-amber-400 font-bold border-t border-zinc-700 pt-1">
+                          <span>Thành tiền</span><span className="font-mono">{formatVND(t - d)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {ledgerError && <p className="text-xs text-rose-400 font-medium bg-rose-950/30 border border-rose-800/50 rounded-lg px-3 py-2">{ledgerError}</p>}
+
+                  <div className="flex gap-2 justify-end border-t border-zinc-700 pt-3">
+                    <button onClick={() => setLedgerMode('view')} disabled={ledgerSaving}
+                      className="px-4 py-1.5 border border-zinc-600 text-zinc-400 hover:text-zinc-200 rounded-lg text-xs font-bold transition cursor-pointer">
+                      Hủy
+                    </button>
+                    <button onClick={saveLedgerEdit} disabled={ledgerSaving}
+                      className="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer">
+                      {ledgerSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
