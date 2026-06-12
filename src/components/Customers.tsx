@@ -12,7 +12,7 @@ interface CustomersProps {
   onDelete: (id: string) => void;
 }
 
-const EMPTY_FORM = { fullName: '', phone: '', email: '', birthDate: '', notes: '' };
+const EMPTY_FORM = { fullName: '', phone: '', email: '', birthDate: '', address: '', notes: '' };
 
 function toDateStr(d: Date) { return d.toISOString().slice(0, 10); }
 
@@ -100,7 +100,7 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
 
   function openEdit(c: Customer) {
     setEditingId(c.id);
-    setForm({ fullName: c.fullName, phone: c.phone, email: c.email ?? '', birthDate: c.birthDate ?? '', notes: c.notes ?? '' });
+    setForm({ fullName: c.fullName, phone: c.phone, email: c.email ?? '', birthDate: c.birthDate ?? '', address: c.address ?? '', notes: c.notes ?? '' });
     setErrors({}); setShowForm(true);
   }
 
@@ -124,9 +124,9 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
     try {
       if (editingId) {
         const existing = customers.find(c => c.id === editingId)!;
-        await onUpdate({ ...existing, fullName: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim() || undefined, birthDate: form.birthDate || undefined, notes: form.notes.trim() || undefined });
+        await onUpdate({ ...existing, fullName: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim() || undefined, birthDate: form.birthDate || undefined, address: form.address.trim() || undefined, notes: form.notes.trim() || undefined });
       } else {
-        await onAdd({ id: `cust_${Date.now()}`, fullName: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim() || undefined, birthDate: form.birthDate || undefined, notes: form.notes.trim() || undefined, createdAt: new Date().toISOString() });
+        await onAdd({ id: `cust_${Date.now()}`, fullName: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim() || undefined, birthDate: form.birthDate || undefined, address: form.address.trim() || undefined, notes: form.notes.trim() || undefined, createdAt: new Date().toISOString() });
       }
       setShowForm(false);
     } finally {
@@ -198,6 +198,26 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                     {expandedId === c.id && (
                       <tr className="bg-blue-50/20">
                         <td colSpan={6} className="px-4 py-3 border-t border-blue-100">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3 text-xs">
+                            {c.address && (
+                              <div className="col-span-2 sm:col-span-3 bg-white rounded-lg border border-slate-200 px-3 py-2">
+                                <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Địa chỉ</p>
+                                <p className="text-slate-700">{c.address}</p>
+                              </div>
+                            )}
+                            {c.email && (
+                              <div className="bg-white rounded-lg border border-slate-200 px-3 py-2">
+                                <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Email</p>
+                                <p className="text-slate-700">{c.email}</p>
+                              </div>
+                            )}
+                            {c.notes && (
+                              <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 col-span-2">
+                                <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Ghi chú</p>
+                                <p className="text-slate-700">{c.notes}</p>
+                              </div>
+                            )}
+                          </div>
                           <div className="flex flex-wrap items-center gap-2">
                             <button onClick={e => { e.stopPropagation(); openHistory(c); }}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
@@ -262,10 +282,16 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                   </div>
                 </div>
                 <div>
+                  <label className="text-xs font-bold text-slate-600 mb-1 block">Địa chỉ</label>
+                  <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP" />
+                </div>
+                <div>
                   <label className="text-xs font-bold text-slate-600 mb-1 block">Ghi chú</label>
                   <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
-                    placeholder="Khách VIP, địa chỉ, ..." />
+                    placeholder="Khách VIP, ..." />
                 </div>
               </div>
               <div className="flex gap-3 p-5 border-t border-slate-200">

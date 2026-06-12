@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Partner, PurchaseOrder } from '../types';
-import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine, Download, Upload, ChevronDown } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine, Download, Upload, ChevronDown, MapPin, Building2, CreditCard, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
@@ -15,8 +15,32 @@ interface PartnersProps {
 
 const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
 
-type Form = { fullName: string; brands: string[]; phones: string[]; emails: string[]; notes: string };
-const EMPTY: Form = { fullName: '', brands: [''], phones: [''], emails: [''], notes: '' };
+type Form = {
+  fullName: string; brands: string[]; phones: string[]; emails: string[];
+  address: string; bankName: string; bankAccount: string; bankAccountName: string; notes: string;
+};
+const EMPTY: Form = {
+  fullName: '', brands: [''], phones: [''], emails: [''],
+  address: '', bankName: '', bankAccount: '', bankAccountName: '', notes: '',
+};
+
+const VIET_BANKS = [
+  { id: 'MB', name: 'MB Bank' }, { id: 'VCB', name: 'Vietcombank' },
+  { id: 'TCB', name: 'Techcombank' }, { id: 'ACB', name: 'ACB' },
+  { id: 'BIDV', name: 'BIDV' }, { id: 'ICB', name: 'VietinBank' },
+  { id: 'VBARD', name: 'Agribank' }, { id: 'TPB', name: 'TPBank' },
+  { id: 'VPB', name: 'VPBank' }, { id: 'STB', name: 'Sacombank' },
+  { id: 'SHB', name: 'SHB' }, { id: 'HDB', name: 'HDBank' },
+  { id: 'VIB', name: 'VIB' }, { id: 'OCB', name: 'OCB' },
+  { id: 'SEAB', name: 'SeABank' }, { id: 'MSB', name: 'MSB' },
+  { id: 'NAB', name: 'NamABank' }, { id: 'ABB', name: 'ABBank' },
+  { id: 'KLB', name: 'KienLongBank' }, { id: 'NCB', name: 'NCB' },
+];
+
+function buildQR(bankCode: string, account: string, amount: number, info: string, name: string) {
+  const params = new URLSearchParams({ amount: String(amount), addInfo: info, accountName: name });
+  return `https://img.vietqr.io/image/${bankCode}-${account}-compact.jpg?${params}`;
+}
 
 export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, onDelete, onUpdateOrder }: PartnersProps) {
   const [search, setSearch] = useState('');
@@ -31,9 +55,9 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const xlsxRef = useRef<HTMLInputElement>(null);
 
-  // Tất cả thương hiệu đã có để gợi ý autocomplete
   const allBrands = useMemo(
     () => Array.from(new Set(partners.flatMap(p => p.brands).filter(Boolean))).sort(),
     [partners]
@@ -41,11 +65,9 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
 
   function exportExcel() {
     const ws = XLSX.utils.json_to_sheet(partners.map(p => ({
-      'Họ tên': p.fullName,
-      'Thương hiệu': p.brands.join('; '),
-      'Điện thoại': p.phones.join('; '),
-      'Email': p.emails.join('; '),
-      'Ghi chú': p.notes ?? '',
+      'Họ tên': p.fullName, 'Thương hiệu': p.brands.join('; '),
+      'Điện thoại': p.phones.join('; '), 'Email': p.emails.join('; '),
+      'Địa chỉ': p.address ?? '', 'Ghi chú': p.notes ?? '',
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Đối tác');
@@ -68,6 +90,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
           brands: splitSemi(String(r['Thương hiệu'] ?? '')),
           phones: splitSemi(String(r['Điện thoại'] ?? '')),
           emails: splitSemi(String(r['Email'] ?? '')),
+          address: r['Địa chỉ'] ? String(r['Địa chỉ']) : undefined,
           notes: r['Ghi chú'] ? String(r['Ghi chú']) : undefined,
           createdAt: new Date().toISOString(),
         };
@@ -116,6 +139,10 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
       brands: p.brands.length ? [...p.brands] : [''],
       phones: p.phones.length ? [...p.phones] : [''],
       emails: p.emails.length ? [...p.emails] : [''],
+      address: p.address ?? '',
+      bankName: p.bankName ?? '',
+      bankAccount: p.bankAccount ?? '',
+      bankAccountName: p.bankAccountName ?? '',
       notes: p.notes ?? '',
     });
     setErrors({}); setShowForm(true);
@@ -134,12 +161,20 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
     if (Object.keys(e).length > 0) { setErrors(e); return; }
     setSaving(true);
     try {
-      const base = { fullName: form.fullName.trim(), brands: cleanArr(form.brands), phones: cleanArr(form.phones), emails: cleanArr(form.emails), notes: form.notes.trim() || undefined };
+      const base: Partial<Partner> = {
+        fullName: form.fullName.trim(),
+        brands: cleanArr(form.brands), phones: cleanArr(form.phones), emails: cleanArr(form.emails),
+        address: form.address.trim() || undefined,
+        bankName: form.bankName.trim() || undefined,
+        bankAccount: form.bankAccount.trim() || undefined,
+        bankAccountName: form.bankAccountName.trim() || undefined,
+        notes: form.notes.trim() || undefined,
+      };
       if (editingId) {
         const existing = partners.find(p => p.id === editingId)!;
-        await onUpdate({ ...existing, ...base });
+        await onUpdate({ ...existing, ...base } as Partner);
       } else {
-        await onAdd({ id: `part_${Date.now()}`, ...base, createdAt: new Date().toISOString() });
+        await onAdd({ id: `part_${Date.now()}`, ...base, createdAt: new Date().toISOString() } as Partner);
       }
       setShowForm(false);
     } finally {
@@ -149,7 +184,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
 
   function openPay(o: PurchaseOrder) {
     const remaining = o.totalAmount - o.paidAmount;
-    setPayingOrder(o); setPayAmount(String(remaining)); setPayFull(false);
+    setPayingOrder(o); setPayAmount(String(remaining)); setPayFull(false); setPaymentConfirmed(false);
   }
 
   async function confirmPay() {
@@ -194,7 +229,6 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
 
   return (
     <div className="space-y-4">
-      {/* datalist for brand autocomplete */}
       <datalist id="partner-brand-list">
         {allBrands.map(b => <option key={b} value={b} />)}
       </datalist>
@@ -270,6 +304,40 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                       {isExpanded && (
                         <tr className="bg-blue-50/20">
                           <td colSpan={6} className="px-4 py-3 border-t border-blue-100">
+                            {/* Info cards */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3 text-xs">
+                              {p.address && (
+                                <div className="col-span-2 sm:col-span-3 bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Địa chỉ</p>
+                                    <p className="text-slate-700">{p.address}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {(p.bankName || p.bankAccount) && (
+                                <div className="col-span-2 bg-white rounded-lg border border-emerald-200 px-3 py-2 flex gap-2">
+                                  <CreditCard className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Tài khoản ngân hàng</p>
+                                    <p className="text-slate-700 font-mono font-bold">{p.bankAccount}</p>
+                                    <p className="text-slate-500">{VIET_BANKS.find(b => b.id === p.bankName)?.name ?? p.bankName} · {p.bankAccountName}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {p.notes && (
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2">
+                                  <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Ghi chú</p>
+                                  <p className="text-slate-700">{p.notes}</p>
+                                </div>
+                              )}
+                              {p.phones.length > 1 && (
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2">
+                                  <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Điện thoại</p>
+                                  <p className="text-slate-700 font-mono">{p.phones.join(' · ')}</p>
+                                </div>
+                              )}
+                            </div>
                             <div className="flex flex-wrap items-center gap-2">
                               <button onClick={e => { e.stopPropagation(); setDebtFor(p); }}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
@@ -283,15 +351,6 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
                                 <Trash2 className="w-3.5 h-3.5" /> Xóa
                               </button>
-                              {p.phones.length > 1 && (
-                                <span className="text-xs text-slate-500 ml-2">SĐT: {p.phones.join(' · ')}</span>
-                              )}
-                              {p.emails.length > 0 && p.emails[0] && (
-                                <span className="text-xs text-slate-500">Email: {p.emails.join(' · ')}</span>
-                              )}
-                              {p.notes && (
-                                <span className="text-xs text-slate-400 italic ml-2">{p.notes}</span>
-                              )}
                             </div>
                           </td>
                         </tr>
@@ -334,6 +393,39 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                 <div>
                   <label className="text-xs font-bold text-slate-600 mb-1 flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> Email</label>
                   {dynField('emails', 'contact@company.com')}
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 mb-1 flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Địa chỉ</label>
+                  <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP" />
+                </div>
+                <div className="border border-emerald-200 rounded-xl p-3 space-y-2 bg-emerald-50/40">
+                  <p className="text-xs font-bold text-emerald-800 flex items-center gap-1">
+                    <Building2 className="w-3.5 h-3.5" /> Tài khoản ngân hàng
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 mb-1 block">Ngân hàng</label>
+                      <select value={form.bankName} onChange={e => setForm(f => ({ ...f, bankName: e.target.value }))}
+                        className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-emerald-500 cursor-pointer">
+                        <option value="">— Chọn ngân hàng —</option>
+                        {VIET_BANKS.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 mb-1 block">Số tài khoản</label>
+                      <input value={form.bankAccount} onChange={e => setForm(f => ({ ...f, bankAccount: e.target.value }))}
+                        className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:border-emerald-500"
+                        placeholder="0123456789" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 mb-1 block">Tên chủ tài khoản</label>
+                    <input value={form.bankAccountName} onChange={e => setForm(f => ({ ...f, bankAccountName: e.target.value }))}
+                      className="w-full px-2 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-emerald-500"
+                      placeholder="NGUYEN VAN A (chữ hoa không dấu)" />
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-600 mb-1 block">Ghi chú</label>
@@ -427,7 +519,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                           </div>
                         ))}
                       </div>
-                      {o.notes && <p className="text-xs text-slate-400 italic">{o.notes}</p>}
+                      {o.notes && !o.notes.startsWith('[DC:') && <p className="text-xs text-slate-400 italic">{o.notes}</p>}
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                         <div className="text-xs space-y-0.5">
                           <p>Tổng: <span className="font-mono font-bold">{formatVND(o.totalAmount)}</span></p>
@@ -451,43 +543,81 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
         )}
       </AnimatePresence>
 
-      {/* Payment Modal */}
+      {/* Payment Modal (with QR) */}
       <AnimatePresence>
         {payingOrder && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
               className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-              <h3 className="font-bold text-slate-800 mb-1">Thanh toán phiếu nhập</h3>
-              <p className="text-xs text-slate-500 font-mono mb-4">{payingOrder.id}</p>
-              <div className="space-y-3 mb-5">
-                <div className="flex justify-between text-sm"><span className="text-slate-600">Tổng phiếu:</span><span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-slate-600">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-slate-600">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
-                <div className="border-t border-slate-200 pt-3 space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={payFull} onChange={e => {
-                      setPayFull(e.target.checked);
-                      if (e.target.checked) setPayAmount(String(payingOrder.totalAmount - payingOrder.paidAmount));
-                    }} className="w-4 h-4 cursor-pointer" />
-                    <span className="text-sm font-medium text-slate-700">Thanh toán toàn bộ</span>
-                  </label>
-                  {!payFull && (
-                    <div>
-                      <label className="text-xs font-bold text-slate-600 mb-1 block">Số tiền thanh toán</label>
-                      <input type="number" min={0} max={payingOrder.totalAmount - payingOrder.paidAmount} value={payAmount}
-                        onChange={e => setPayAmount(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" />
+              {paymentConfirmed ? (
+                <div className="text-center py-4">
+                  <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <CheckCircle2 className="w-9 h-9 text-emerald-600" />
+                  </div>
+                  <h3 className="font-bold text-emerald-700 text-lg mb-1">Thanh toán hoàn tất</h3>
+                  <p className="text-sm text-slate-500 mb-5">Đã ghi nhận giao dịch thành công.</p>
+                  <button onClick={confirmPay} disabled={saving}
+                    className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                    {saving ? 'Đang lưu...' : 'Xác nhận & Đóng'}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h3 className="font-bold text-slate-800 mb-1">Thanh toán phiếu nhập</h3>
+                  <p className="text-xs text-slate-500 font-mono mb-4">{payingOrder.id}</p>
+                  <div className="space-y-3 mb-4">
+                    <div className="flex justify-between text-sm"><span className="text-slate-600">Tổng phiếu:</span><span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-slate-600">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-slate-600">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
+                    <div className="border-t border-slate-200 pt-3 space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={payFull} onChange={e => {
+                          setPayFull(e.target.checked);
+                          if (e.target.checked) setPayAmount(String(payingOrder.totalAmount - payingOrder.paidAmount));
+                        }} className="w-4 h-4 cursor-pointer" />
+                        <span className="text-sm font-medium text-slate-700">Thanh toán toàn bộ</span>
+                      </label>
+                      {!payFull && (
+                        <div>
+                          <label className="text-xs font-bold text-slate-600 mb-1 block">Số tiền thanh toán</label>
+                          <input type="number" min={0} max={payingOrder.totalAmount - payingOrder.paidAmount} value={payAmount}
+                            onChange={e => setPayAmount(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* QR Code if partner has bank info */}
+                  {debtFor?.bankName && debtFor?.bankAccount && Number(payAmount) > 0 && (
+                    <div className="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Quét QR chuyển khoản</p>
+                      <img
+                        src={buildQR(debtFor.bankName, debtFor.bankAccount, payFull ? payingOrder.totalAmount - payingOrder.paidAmount : Number(payAmount), `TT no ${payingOrder.id}`, debtFor.bankAccountName ?? '')}
+                        alt="QR chuyển khoản"
+                        className="w-44 h-44 mx-auto rounded-lg object-contain"
+                      />
+                      <p className="text-xs text-slate-600 font-mono font-bold mt-2">{debtFor.bankAccount}</p>
+                      <p className="text-xs text-slate-500">{VIET_BANKS.find(b => b.id === debtFor.bankName)?.name} · {debtFor.bankAccountName}</p>
                     </div>
                   )}
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
-                <button onClick={confirmPay} disabled={saving}
-                  className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
-                  {saving ? 'Đang lưu...' : 'Xác nhận'}
-                </button>
-              </div>
+
+                  <div className="flex gap-3">
+                    <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                    {debtFor?.bankAccount ? (
+                      <button onClick={() => setPaymentConfirmed(true)} disabled={Number(payAmount) <= 0 && !payFull}
+                        className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                        Đã chuyển khoản
+                      </button>
+                    ) : (
+                      <button onClick={confirmPay} disabled={saving}
+                        className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                        {saving ? 'Đang lưu...' : 'Xác nhận'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </motion.div>
           </div>
         )}

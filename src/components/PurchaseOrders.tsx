@@ -71,7 +71,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
           'Đơn giá': it.unitCost, 'Thành tiền': it.unitCost * it.quantity,
           'Tổng phiếu': o.totalAmount, 'Đã trả': o.paidAmount,
           'Còn nợ': o.totalAmount - o.paidAmount, 'Ghi chú': o.notes ?? '',
-          'Phiếu gốc': o.parentId ?? '', 'Ghi chú điều chỉnh': o.revisionNote ?? '',
+          'Phiếu gốc': o.parentId ?? getParentId(o) ?? '',
         });
       });
     });
@@ -89,15 +89,24 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     });
   }, [orders, typeFilter, partnerFilter]);
 
+  // Detect revision: ID contains "." (e.g. PO123.1) OR has parentId from legacy DB
+  function getParentId(o: PurchaseOrder): string | null {
+    if (o.parentId) return o.parentId;
+    const dot = o.id.lastIndexOf('.');
+    if (dot > 0) return o.id.slice(0, dot);
+    return null;
+  }
+
   // Group: root orders with their revisions displayed right after
   const ordersWithRevisions = useMemo(() => {
     const revisionMap = new Map<string, PurchaseOrder[]>();
     const roots: PurchaseOrder[] = [];
     filtered.forEach(o => {
-      if (o.parentId) {
-        const arr = revisionMap.get(o.parentId) ?? [];
+      const pid = getParentId(o);
+      if (pid) {
+        const arr = revisionMap.get(pid) ?? [];
         arr.push(o);
-        revisionMap.set(o.parentId, arr);
+        revisionMap.set(pid, arr);
       } else {
         roots.push(o);
       }
@@ -167,20 +176,24 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     const partner = partners.find(p => p.id === draftPartnerId);
 
     let newOrderId: string;
-    let parentId: string | undefined;
-    let revisionNote: string | undefined;
+    let finalNotes: string | undefined;
 
     if (revisingOrder) {
-      // Root ID is either the parent of the revising order, or the order itself
-      const rootId = revisingOrder.parentId || revisingOrder.id;
-      const revCount = orders.filter(o => o.parentId === rootId).length;
+      // Root ID = strip any existing revision suffix
+      const rootId = getParentId(revisingOrder) ?? revisingOrder.id;
+      const revCount = orders.filter(o => {
+        const pid = getParentId(o);
+        return pid === rootId;
+      }).length;
       newOrderId = `${rootId}.${revCount + 1}`;
-      parentId = rootId;
-      const noteLines = [`Điều chỉnh từ phiếu ${revisingOrder.id}`];
+      // Encode revision info in notes (no DB column needed)
+      const noteLines = [`[DC: ${revisingOrder.id}]`];
       if (reviseNotes.trim()) noteLines.push(reviseNotes.trim());
-      revisionNote = noteLines.join(' — ');
+      if (draftNotes.trim()) noteLines.push(draftNotes.trim());
+      finalNotes = noteLines.join(' — ');
     } else {
       newOrderId = `PO${Date.now()}`;
+      finalNotes = draftNotes.trim() || undefined;
     }
 
     const order: PurchaseOrder = {
@@ -192,9 +205,8 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       items: validItems.map(it => ({ productId: it.productId, productName: it.productName, sku: it.sku, quantity: it.quantity, unitCost: it.unitCost })),
       totalAmount: validItems.reduce((s, it) => s + it.quantity * it.unitCost, 0),
       paidAmount: 0,
-      notes: draftNotes.trim() || undefined,
-      parentId,
-      revisionNote,
+      notes: finalNotes,
+      // parentId/revisionNote intentionally omitted — no DB columns needed
     };
 
     setSaving(true);
@@ -306,10 +318,10 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden">
                     <div className="px-4 pb-4 border-t border-slate-100">
-                      {o.revisionNote && (
+                      {(o.revisionNote || (isRevision && o.notes?.startsWith('[DC:'))) && (
                         <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
                           <GitBranch className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                          <span>{o.revisionNote}</span>
+                          <span>{o.revisionNote || o.notes?.replace(/^\[DC:[^\]]+\]\s*—?\s*/, '') || o.notes}</span>
                         </div>
                       )}
                       <table className="w-full text-xs mt-3">
@@ -338,7 +350,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                           </tr>
                         </tfoot>
                       </table>
-                      {o.notes && <p className="text-xs text-slate-400 mt-2 italic">{o.notes}</p>}
+                      {o.notes && !o.notes.startsWith('[DC:') && <p className="text-xs text-slate-400 mt-2 italic">{o.notes}</p>}
 
                       {/* Action buttons */}
                       <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">

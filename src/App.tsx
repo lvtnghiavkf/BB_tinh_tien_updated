@@ -373,6 +373,7 @@ export default function App() {
               <Reports
                 invoices={invoices}
                 products={products}
+                isManager={isManager}
                 onSelectInvoiceForReprint={setSelectedReprintInvoice}
               />
             )}

@@ -112,22 +112,32 @@ create table if not exists public.customers (
   birth_date  date,
   phone       text not null default '',
   email       text,
+  address     text,
   notes       text,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+alter table public.customers add column if not exists address text;
 
 -- ── Bảng 6: Đối tác / Nhà cung cấp ──────────────────────────
 create table if not exists public.partners (
-  id          text primary key,
-  full_name   text not null,
-  brands      text[] not null default '{}',
-  phones      text[] not null default '{}',
-  emails      text[] not null default '{}',
-  notes       text,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  id                text primary key,
+  full_name         text not null,
+  brands            text[] not null default '{}',
+  phones            text[] not null default '{}',
+  emails            text[] not null default '{}',
+  address           text,
+  bank_name         text,
+  bank_account      text,
+  bank_account_name text,
+  notes             text,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
 );
+alter table public.partners add column if not exists address           text;
+alter table public.partners add column if not exists bank_name         text;
+alter table public.partners add column if not exists bank_account      text;
+alter table public.partners add column if not exists bank_account_name text;
 
 -- ── Bảng 7: Phiếu nhập/xuất hàng ─────────────────────────────
 create table if not exists public.purchase_orders (
@@ -159,17 +169,27 @@ create index if not exists idx_poi_order_id on public.purchase_order_items(order
 
 -- ── Bảng 9: Bảng lương nhân viên ─────────────────────────────
 create table if not exists public.salary_entries (
-  id          text primary key,
-  full_name   text not null,
-  phone       text not null default '',
-  amount      bigint not null default 0,
-  calc_type   text not null default 'lump',  -- lump (đợt) | daily (ngày)
-  date_from   date not null,
-  date_to     date not null,
-  notes       text,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  id                text primary key,
+  full_name         text not null,
+  phone             text not null default '',
+  amount            bigint not null default 0,
+  calc_type         text not null default 'lump',  -- lump (đợt) | daily (ngày)
+  date_from         date not null,
+  date_to           date not null,
+  bank_name         text,
+  bank_account      text,
+  bank_account_name text,
+  paid_amount       bigint not null default 0,
+  is_paid_cash      boolean,
+  notes             text,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
 );
+alter table public.salary_entries add column if not exists bank_name         text;
+alter table public.salary_entries add column if not exists bank_account      text;
+alter table public.salary_entries add column if not exists bank_account_name text;
+alter table public.salary_entries add column if not exists paid_amount       bigint not null default 0;
+alter table public.salary_entries add column if not exists is_paid_cash      boolean;
 
 -- Phân quyền cho các bảng mới
 alter table public.customers            enable row level security;

@@ -70,6 +70,7 @@ export interface Customer {
   birthDate?: string; // YYYY-MM-DD
   phone: string;
   email?: string;
+  address?: string;
   notes?: string;
   createdAt: string;
 }
@@ -80,6 +81,10 @@ export interface Partner {
   brands: string[];
   phones: string[];
   emails: string[];
+  address?: string;
+  bankName?: string;
+  bankAccount?: string;
+  bankAccountName?: string;
   notes?: string;
   createdAt: string;
 }
@@ -114,6 +119,11 @@ export interface SalaryEntry {
   calcType: 'lump' | 'daily';
   dateFrom: string; // YYYY-MM-DD
   dateTo: string;   // YYYY-MM-DD
+  bankName?: string;
+  bankAccount?: string;
+  bankAccountName?: string;
+  paidAmount: number; // Đã thanh toán
+  isPaidCash?: boolean; // Trả tiền mặt
   notes?: string;
   createdAt: string;
 }

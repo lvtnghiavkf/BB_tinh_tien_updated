@@ -157,33 +157,32 @@ export async function fetchCustomers(): Promise<Customer[]> {
     birthDate: r.birth_date ?? undefined,
     phone: r.phone ?? '',
     email: r.email ?? undefined,
+    address: r.address ?? undefined,
     notes: r.notes ?? undefined,
     createdAt: r.created_at,
   }));
 }
 
 export async function insertCustomer(c: Customer): Promise<void> {
-  const { error } = await supabase.from('customers').insert({
-    id: c.id,
-    full_name: c.fullName,
+  const payload: Record<string, any> = {
+    id: c.id, full_name: c.fullName,
     birth_date: c.birthDate ?? null,
-    phone: c.phone,
-    email: c.email ?? null,
-    notes: c.notes ?? null,
-    created_at: c.createdAt,
-  });
+    phone: c.phone, email: c.email ?? null,
+    notes: c.notes ?? null, created_at: c.createdAt,
+  };
+  if (c.address !== undefined) payload.address = c.address || null;
+  const { error } = await supabase.from('customers').insert(payload);
   if (error) throw error;
 }
 
 export async function updateCustomer(c: Customer): Promise<void> {
-  const { error } = await supabase.from('customers').update({
-    full_name: c.fullName,
-    birth_date: c.birthDate ?? null,
-    phone: c.phone,
-    email: c.email ?? null,
-    notes: c.notes ?? null,
-    updated_at: new Date().toISOString(),
-  }).eq('id', c.id);
+  const payload: Record<string, any> = {
+    full_name: c.fullName, birth_date: c.birthDate ?? null,
+    phone: c.phone, email: c.email ?? null,
+    notes: c.notes ?? null, updated_at: new Date().toISOString(),
+  };
+  if (c.address !== undefined) payload.address = c.address || null;
+  const { error } = await supabase.from('customers').update(payload).eq('id', c.id);
   if (error) throw error;
 }
 
@@ -206,33 +205,40 @@ export async function fetchPartners(): Promise<Partner[]> {
     brands: r.brands ?? [],
     phones: r.phones ?? [],
     emails: r.emails ?? [],
+    address: r.address ?? undefined,
+    bankName: r.bank_name ?? undefined,
+    bankAccount: r.bank_account ?? undefined,
+    bankAccountName: r.bank_account_name ?? undefined,
     notes: r.notes ?? undefined,
     createdAt: r.created_at,
   }));
 }
 
 export async function insertPartner(p: Partner): Promise<void> {
-  const { error } = await supabase.from('partners').insert({
-    id: p.id,
-    full_name: p.fullName,
-    brands: p.brands,
-    phones: p.phones,
-    emails: p.emails,
-    notes: p.notes ?? null,
-    created_at: p.createdAt,
-  });
+  const payload: Record<string, any> = {
+    id: p.id, full_name: p.fullName,
+    brands: p.brands, phones: p.phones, emails: p.emails,
+    notes: p.notes ?? null, created_at: p.createdAt,
+  };
+  if (p.address !== undefined) payload.address = p.address || null;
+  if (p.bankName !== undefined) payload.bank_name = p.bankName || null;
+  if (p.bankAccount !== undefined) payload.bank_account = p.bankAccount || null;
+  if (p.bankAccountName !== undefined) payload.bank_account_name = p.bankAccountName || null;
+  const { error } = await supabase.from('partners').insert(payload);
   if (error) throw error;
 }
 
 export async function updatePartner(p: Partner): Promise<void> {
-  const { error } = await supabase.from('partners').update({
-    full_name: p.fullName,
-    brands: p.brands,
-    phones: p.phones,
-    emails: p.emails,
-    notes: p.notes ?? null,
+  const payload: Record<string, any> = {
+    full_name: p.fullName, brands: p.brands, phones: p.phones,
+    emails: p.emails, notes: p.notes ?? null,
     updated_at: new Date().toISOString(),
-  }).eq('id', p.id);
+  };
+  if (p.address !== undefined) payload.address = p.address || null;
+  if (p.bankName !== undefined) payload.bank_name = p.bankName || null;
+  if (p.bankAccount !== undefined) payload.bank_account = p.bankAccount || null;
+  if (p.bankAccountName !== undefined) payload.bank_account_name = p.bankAccountName || null;
+  const { error } = await supabase.from('partners').update(payload).eq('id', p.id);
   if (error) throw error;
 }
 
@@ -330,37 +336,44 @@ export async function fetchSalaryEntries(): Promise<SalaryEntry[]> {
     calcType: r.calc_type as 'lump' | 'daily',
     dateFrom: r.date_from,
     dateTo: r.date_to,
+    bankName: r.bank_name ?? undefined,
+    bankAccount: r.bank_account ?? undefined,
+    bankAccountName: r.bank_account_name ?? undefined,
+    paidAmount: r.paid_amount ?? 0,
+    isPaidCash: r.is_paid_cash ?? undefined,
     notes: r.notes ?? undefined,
     createdAt: r.created_at,
   }));
 }
 
 export async function insertSalaryEntry(s: SalaryEntry): Promise<void> {
-  const { error } = await supabase.from('salary_entries').insert({
-    id: s.id,
-    full_name: s.fullName,
-    phone: s.phone,
-    amount: s.amount,
-    calc_type: s.calcType,
-    date_from: s.dateFrom,
-    date_to: s.dateTo,
-    notes: s.notes ?? null,
-    created_at: s.createdAt,
-  });
+  const payload: Record<string, any> = {
+    id: s.id, full_name: s.fullName, phone: s.phone,
+    amount: s.amount, calc_type: s.calcType,
+    date_from: s.dateFrom, date_to: s.dateTo,
+    notes: s.notes ?? null, created_at: s.createdAt,
+  };
+  if (s.bankName !== undefined) payload.bank_name = s.bankName || null;
+  if (s.bankAccount !== undefined) payload.bank_account = s.bankAccount || null;
+  if (s.bankAccountName !== undefined) payload.bank_account_name = s.bankAccountName || null;
+  if (s.paidAmount !== undefined) payload.paid_amount = s.paidAmount;
+  if (s.isPaidCash !== undefined) payload.is_paid_cash = s.isPaidCash;
+  const { error } = await supabase.from('salary_entries').insert(payload);
   if (error) throw error;
 }
 
 export async function updateSalaryEntry(s: SalaryEntry): Promise<void> {
-  const { error } = await supabase.from('salary_entries').update({
-    full_name: s.fullName,
-    phone: s.phone,
-    amount: s.amount,
-    calc_type: s.calcType,
-    date_from: s.dateFrom,
-    date_to: s.dateTo,
-    notes: s.notes ?? null,
-    updated_at: new Date().toISOString(),
-  }).eq('id', s.id);
+  const payload: Record<string, any> = {
+    full_name: s.fullName, phone: s.phone, amount: s.amount,
+    calc_type: s.calcType, date_from: s.dateFrom, date_to: s.dateTo,
+    notes: s.notes ?? null, updated_at: new Date().toISOString(),
+  };
+  if (s.bankName !== undefined) payload.bank_name = s.bankName || null;
+  if (s.bankAccount !== undefined) payload.bank_account = s.bankAccount || null;
+  if (s.bankAccountName !== undefined) payload.bank_account_name = s.bankAccountName || null;
+  if (s.paidAmount !== undefined) payload.paid_amount = s.paidAmount;
+  if (s.isPaidCash !== undefined) payload.is_paid_cash = s.isPaidCash;
+  const { error } = await supabase.from('salary_entries').update(payload).eq('id', s.id);
   if (error) throw error;
 }
 
