@@ -304,7 +304,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                   return (
                     <React.Fragment key={p.id}>
                       <tr
-                        className={`transition cursor-pointer ${isExpanded ? 'bg-blue-50/30' : 'hover:bg-slate-50/60'}`}
+                        className={`transition cursor-pointer ${isExpanded ? 'bg-amber-950/20' : 'hover:bg-zinc-800/40'}`}
                         onClick={() => setExpandedId(isExpanded ? null : p.id)}
                       >
                         <td className="px-4 py-3 font-semibold text-slate-800">{p.fullName}</td>
@@ -365,7 +365,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
 
                                 {/* Tài khoản ngân hàng */}
                                 {(p.bankName || p.bankAccount) ? (
-                                  <div className="col-span-2 sm:col-span-2 bg-emerald-50/60 rounded-lg border border-emerald-200 px-3 py-2 flex gap-2">
+                                  <div className="col-span-2 sm:col-span-2 bg-emerald-900/25 rounded-lg border border-emerald-700 px-3 py-2 flex gap-2">
                                     <CreditCard className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
                                     <div>
                                       <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Tài khoản ngân hàng</p>

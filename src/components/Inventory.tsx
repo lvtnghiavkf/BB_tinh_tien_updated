@@ -571,7 +571,7 @@ export default function Inventory({
                   return (
                     <React.Fragment key={p.id}>
                       <tr
-                        className={`transition text-sm cursor-pointer ${isSelected ? 'bg-blue-50/60' : isExpanded ? 'bg-slate-50' : 'hover:bg-slate-50/55'} ${p.hidden ? 'opacity-55' : ''}`}
+                        className={`transition text-sm cursor-pointer ${isSelected ? 'bg-blue-900/20' : isExpanded ? 'bg-amber-950/30' : 'hover:bg-zinc-800/40'} ${p.hidden ? 'opacity-55' : ''}`}
                         onClick={() => setExpandedId(isExpanded ? null : p.id)}
                       >
                         <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
@@ -621,8 +621,8 @@ export default function Inventory({
 
                       {/* Panel mở rộng — chi tiết đầy đủ */}
                       {isExpanded && (
-                        <tr className="bg-slate-50/60">
-                          <td colSpan={10} className="px-5 py-4 border-t border-slate-200">
+                        <tr className="bg-zinc-900">
+                          <td colSpan={10} className="px-5 py-4 border-t border-zinc-700">
                             <div className="space-y-3">
                               {/* Tên + trạng thái */}
                               <div className="flex items-start justify-between gap-3">

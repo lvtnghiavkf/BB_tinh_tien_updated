@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Customer, Invoice } from '../types';
-import { Plus, Pencil, Trash2, Search, X, User, Calendar, ShoppingBag, Download, Upload, ChevronDown } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, User, Calendar, ShoppingBag, Download, Upload, ChevronDown, Phone, Mail, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
@@ -94,6 +94,19 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
     return { totalAmount, totalItems };
   }, [historyInvoices]);
 
+  const customerStats = useMemo(() => {
+    const map: Record<string, { count: number; total: number; last?: string }> = {};
+    invoices.forEach(inv => {
+      if (!inv.customerPhone) return;
+      const k = inv.customerPhone;
+      if (!map[k]) map[k] = { count: 0, total: 0 };
+      map[k].count++;
+      map[k].total += inv.finalAmount;
+      if (!map[k].last || inv.timestamp > map[k].last!) map[k].last = inv.timestamp;
+    });
+    return map;
+  }, [invoices]);
+
   function openAdd() {
     setEditingId(null); setForm(EMPTY_FORM); setErrors({}); setShowForm(true);
   }
@@ -183,7 +196,7 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                 {filtered.map(c => (
                   <React.Fragment key={c.id}>
                     <tr
-                      className={`transition cursor-pointer ${expandedId === c.id ? 'bg-blue-50/30' : 'hover:bg-slate-50/60'}`}
+                      className={`transition cursor-pointer ${expandedId === c.id ? 'bg-amber-950/20' : 'hover:bg-zinc-800/40'}`}
                       onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
                     >
                       <td className="px-4 py-3 font-semibold text-slate-800">{c.fullName}</td>
@@ -195,46 +208,99 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                         <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${expandedId === c.id ? 'rotate-180 text-blue-500' : ''}`} />
                       </td>
                     </tr>
-                    {expandedId === c.id && (
-                      <tr className="bg-blue-50/20">
-                        <td colSpan={6} className="px-4 py-3 border-t border-blue-100">
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3 text-xs">
-                            {c.address && (
-                              <div className="col-span-2 sm:col-span-3 bg-white rounded-lg border border-slate-200 px-3 py-2">
-                                <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Địa chỉ</p>
-                                <p className="text-slate-700">{c.address}</p>
+                    {expandedId === c.id && (() => {
+                      const stats = customerStats[c.phone];
+                      return (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-4 border-t border-slate-200 bg-slate-50/50" onClick={e => e.stopPropagation()}>
+                            <div className="space-y-3">
+                              {/* Info grid */}
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                                {/* Điện thoại — luôn hiện */}
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <Phone className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Điện thoại</p>
+                                    <p className="text-slate-700 font-mono">{c.phone || <span className="italic text-slate-400">Chưa có</span>}</p>
+                                  </div>
+                                </div>
+
+                                {/* Ngày sinh */}
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <Calendar className="w-3.5 h-3.5 text-purple-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Ngày sinh</p>
+                                    {c.birthDate
+                                      ? <p className="text-slate-700">{new Date(c.birthDate + 'T00:00:00').toLocaleDateString('vi-VN')}</p>
+                                      : <p className="text-slate-400 italic">Chưa có</p>}
+                                  </div>
+                                </div>
+
+                                {/* Email */}
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <Mail className="w-3.5 h-3.5 text-indigo-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Email</p>
+                                    {c.email
+                                      ? <p className="text-slate-700">{c.email}</p>
+                                      : <p className="text-slate-400 italic">Chưa có</p>}
+                                  </div>
+                                </div>
+
+                                {/* Địa chỉ */}
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <MapPin className="w-3.5 h-3.5 text-orange-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Địa chỉ</p>
+                                    {c.address
+                                      ? <p className="text-slate-700">{c.address}</p>
+                                      : <p className="text-slate-400 italic">Chưa có</p>}
+                                  </div>
+                                </div>
+
+                                {/* Tổng mua hàng */}
+                                <div className="bg-blue-900/20 rounded-lg border border-blue-700/50 px-3 py-2 flex gap-2">
+                                  <ShoppingBag className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Lịch sử mua</p>
+                                    {stats
+                                      ? <>
+                                          <p className="text-slate-700 font-semibold">{stats.count} hóa đơn</p>
+                                          <p className="text-blue-600 font-mono font-bold">{formatVND(stats.total)}</p>
+                                        </>
+                                      : <p className="text-slate-400 italic">Chưa có</p>}
+                                  </div>
+                                </div>
+
+                                {/* Ghi chú */}
+                                {c.notes && (
+                                  <div className="bg-white rounded-lg border border-slate-200 px-3 py-2">
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Ghi chú</p>
+                                    <p className="text-slate-700">{c.notes}</p>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                            {c.email && (
-                              <div className="bg-white rounded-lg border border-slate-200 px-3 py-2">
-                                <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Email</p>
-                                <p className="text-slate-700">{c.email}</p>
+
+                              {/* Actions */}
+                              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
+                                <button onClick={e => { e.stopPropagation(); openHistory(c); }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                  <ShoppingBag className="w-3.5 h-3.5" /> Lịch sử mua hàng
+                                </button>
+                                <button onClick={e => { e.stopPropagation(); openEdit(c); }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                  <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
+                                </button>
+                                <button onClick={e => { e.stopPropagation(); setDeleteConfirm(c.id); }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                  <Trash2 className="w-3.5 h-3.5" /> Xóa
+                                </button>
                               </div>
-                            )}
-                            {c.notes && (
-                              <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 col-span-2">
-                                <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Ghi chú</p>
-                                <p className="text-slate-700">{c.notes}</p>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button onClick={e => { e.stopPropagation(); openHistory(c); }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                              <ShoppingBag className="w-3.5 h-3.5" /> Lịch sử mua hàng
-                            </button>
-                            <button onClick={e => { e.stopPropagation(); openEdit(c); }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                              <Pencil className="w-3.5 h-3.5" /> Chỉnh sửa
-                            </button>
-                            <button onClick={e => { e.stopPropagation(); setDeleteConfirm(c.id); }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                              <Trash2 className="w-3.5 h-3.5" /> Xóa
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })()}
                   </React.Fragment>
                 ))}
               </tbody>
