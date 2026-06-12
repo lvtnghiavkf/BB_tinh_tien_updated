@@ -284,21 +284,21 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row items-stretch gap-3">
-        <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1 border border-slate-200">
+        <div className="flex items-center gap-2 bg-zinc-800 rounded-lg p-1 border border-zinc-700">
           {(['all', 'import', 'export'] as OrderType[]).map(t => (
             <button key={t} onClick={() => setTypeFilter(t)}
-              className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${typeFilter === t ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+              className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${typeFilter === t ? 'bg-blue-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-100'}`}>
               {t === 'all' ? 'Tất cả' : t === 'import' ? '↓ Nhập hàng' : '↑ Xuất hàng'}
             </button>
           ))}
         </div>
         <select value={partnerFilter} onChange={e => setPartnerFilter(e.target.value)}
-          className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:border-blue-500 cursor-pointer">
+          className="px-3 py-2 border border-zinc-700 rounded-lg text-sm bg-zinc-800 text-amber-400 focus:outline-none focus:border-blue-500 cursor-pointer">
           <option value="">Tất cả đối tác</option>
           {partners.map(p => <option key={p.id} value={p.id}>{p.fullName}</option>)}
         </select>
         <button onClick={exportExcel}
-          className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer transition whitespace-nowrap">
+          className="flex items-center gap-1.5 px-3 py-2 border border-zinc-700 text-zinc-300 hover:bg-zinc-800 rounded-lg text-sm font-bold cursor-pointer transition whitespace-nowrap">
           <Download className="w-4 h-4" /> Xuất Excel
         </button>
         <button onClick={() => { resetCreate(); setShowCreate(true); }}
@@ -308,63 +308,89 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       </div>
 
       {/* List */}
-      <div className="space-y-3">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
         {filteredFamilies.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
-            <ChevronsUpDown className="w-10 h-10 mx-auto stroke-1 mb-2 text-slate-300" />
+          <div className="p-12 text-center text-zinc-500">
+            <ChevronsUpDown className="w-10 h-10 mx-auto stroke-1 mb-2 text-zinc-600" />
             <p className="text-sm font-semibold">Chưa có phiếu nào</p>
           </div>
-        ) : filteredFamilies.map(({ representative: o, root, revisions }) => {
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-zinc-800 border-b border-zinc-700 text-zinc-400 text-xs font-bold uppercase tracking-wider">
+                  <th className="px-3 py-3 w-10 text-center">#</th>
+                  <th className="px-4 py-3">Thời gian</th>
+                  <th className="px-4 py-3">Mã phiếu</th>
+                  <th className="px-4 py-3 text-center">Loại phiếu</th>
+                  <th className="px-4 py-3 text-right">Công nợ</th>
+                  <th className="px-4 py-3 text-center">Tình trạng</th>
+                  <th className="px-4 py-3 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredFamilies.map(({ representative: o, root, revisions }, familyIdx) => {
           const hasRevisions = revisions.length > 0;
           const remaining = o.totalAmount - o.paidAmount;
           const isOpen = expandedId === o.id;
           const activeTab = expandedTab[o.id] ?? 'info';
           const orderLogs = paymentLogs.filter(l => l.referenceId === o.id || l.referenceId === root.id || revisions.some(r => l.referenceId === r.id));
           return (
-            <div key={o.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 cursor-pointer hover:bg-zinc-800/40 transition"
+            <React.Fragment key={o.id}>
+              <tr
+                className={`border-b border-zinc-800 cursor-pointer transition-colors ${isOpen ? 'bg-amber-950/20' : 'hover:bg-zinc-800/60'}`}
                 onClick={() => setExpandedId(isOpen ? null : o.id)}
               >
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${o.type === 'import' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
-                    {o.type === 'import' ? <ArrowDownToLine className="w-4 h-4" /> : <ArrowUpFromLine className="w-4 h-4" />}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-bold text-sm text-slate-800">
-                        {o.type === 'import' ? 'Phiếu nhập hàng' : 'Phiếu xuất hàng'}
-                      </p>
-                      {hasRevisions && <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded">Đã điều chỉnh</span>}
+                <td className="px-3 py-3 text-center text-zinc-500 text-xs">{familyIdx + 1}</td>
+                <td className="px-4 py-3 text-zinc-400 text-xs font-mono whitespace-nowrap">
+                  {new Date(o.timestamp).toLocaleDateString('vi-VN')}{' '}
+                  {new Date(o.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </td>
+                <td className="px-4 py-3">
+                  <p className="font-mono font-bold text-amber-400 text-sm">{o.id}</p>
+                  {o.partnerName && <p className="text-[11px] text-zinc-500 mt-0.5">{o.partnerName}</p>}
+                  {hasRevisions && <span className="text-[10px] bg-amber-900/40 text-amber-300 border border-amber-700 font-bold px-1.5 py-0.5 rounded mt-0.5 inline-block">Đã điều chỉnh</span>}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${o.type === 'import' ? 'bg-blue-900/40 text-blue-300 border-blue-700' : 'bg-amber-900/40 text-amber-300 border-amber-700'}`}>
+                    {o.type === 'import' ? <><ArrowDownToLine className="w-3 h-3" /> Nhập hàng</> : <><ArrowUpFromLine className="w-3 h-3" /> Xuất hàng</>}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-sm">
+                  {o.type === 'import' ? (
+                    <div>
+                      <p className="font-bold text-zinc-100">{formatVND(o.totalAmount)}</p>
+                      {remaining > 0 && <p className="text-[11px] text-rose-400 font-bold">Còn: {formatVND(remaining)}</p>}
                     </div>
-                    <p className="text-xs text-slate-500 font-mono">{o.id} · {new Date(o.timestamp).toLocaleDateString('vi-VN')}</p>
-                    {o.partnerName && <p className="text-xs text-slate-500">{o.partnerName}</p>}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 text-right shrink-0">
-                  <div>
-                    <p className="font-mono font-bold text-slate-800">{formatVND(o.totalAmount)}</p>
-                    {o.type === 'import' && (
-                      <p className={`text-xs font-mono ${remaining > 0 ? 'text-rose-600 font-bold' : 'text-emerald-600'}`}>
-                        {remaining > 0 ? `Còn nợ: ${formatVND(remaining)}` : 'Đã thanh toán đủ'}
-                      </p>
-                    )}
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-blue-500' : ''}`} />
-                </div>
-              </div>
+                  ) : <span className="text-zinc-500">—</span>}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  {o.type === 'import' ? (
+                    remaining > 0
+                      ? <span className="px-2 py-0.5 bg-rose-900/40 text-rose-300 border border-rose-700 rounded-md text-[10px] font-bold">Còn nợ</span>
+                      : <span className="px-2 py-0.5 bg-emerald-900/40 text-emerald-300 border border-emerald-700 rounded-md text-[10px] font-bold">Đã TT</span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-zinc-700/60 text-zinc-300 border border-zinc-600 rounded-md text-[10px] font-bold">Hoàn thành</span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${isOpen ? 'rotate-180 text-amber-400' : ''}`} />
+                </td>
+              </tr>
 
               <AnimatePresence>
                 {isOpen && (
+                  <tr className="bg-amber-950/10 border-b border-zinc-800">
+                    <td colSpan={7} className="p-0">
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden">
-                    <div className="border-t border-slate-100">
+                    <div className="border-t border-zinc-700/50">
                       {/* Tabs */}
-                      <div className="flex border-b border-slate-100 bg-slate-50">
+                      <div className="flex border-b border-zinc-700 bg-zinc-800/50">
                         {(['info', 'history'] as const).map(tab => (
                           <button key={tab}
                             onClick={e => { e.stopPropagation(); setExpandedTab(prev => ({ ...prev, [o.id]: tab })); }}
-                            className={`px-4 py-2 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${activeTab === tab ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-slate-500 hover:text-slate-700'}`}>
+                            className={`px-4 py-2 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${activeTab === tab ? 'text-amber-400 border-b-2 border-amber-400 bg-zinc-900/50' : 'text-zinc-400 hover:text-zinc-100'}`}>
                             {tab === 'info' ? <><ChevronsUpDown className="w-3.5 h-3.5" /> Thông tin</> : <><History className="w-3.5 h-3.5" /> Lịch sử ({orderLogs.length + (hasRevisions ? revisions.length : 0)})</>}
                           </button>
                         ))}
@@ -510,35 +536,41 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                             </div>
                           )}
                           {orderLogs.length === 0 && !hasRevisions && (
-                            <p className="text-xs text-slate-400 text-center py-4">Chưa có lịch sử</p>
+                            <p className="text-xs text-zinc-500 text-center py-4">Chưa có lịch sử</p>
                           )}
                         </div>
                       )}
                     </div>
                   </motion.div>
+                    </td>
+                  </tr>
                 )}
               </AnimatePresence>
-            </div>
+            </React.Fragment>
           );
         })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Create / Revise Modal */}
       <AnimatePresence>
         {showCreate && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-4">
-              <div className={`flex items-center justify-between p-5 border-b ${revisingOrder ? 'bg-amber-50 border-amber-200' : 'border-slate-200'}`}>
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-5xl my-4">
+              <div className={`flex items-center justify-between p-5 border-b ${revisingOrder ? 'bg-amber-900/20 border-amber-700' : 'border-zinc-700'}`}>
                 <div>
-                  <h3 className="font-bold text-slate-800">
+                  <h3 className="font-bold text-zinc-100">
                     {revisingOrder ? `Điều chỉnh phiếu ${revisingOrder.id}` : 'Tạo phiếu xuất nhập hàng'}
                   </h3>
                   {revisingOrder && (
-                    <p className="text-xs text-amber-700 mt-0.5">Phiếu gốc sẽ được giữ nguyên. Phiếu điều chỉnh mới sẽ được tạo.</p>
+                    <p className="text-xs text-amber-400 mt-0.5">Phiếu gốc sẽ được giữ nguyên. Phiếu điều chỉnh mới sẽ được tạo.</p>
                   )}
                 </div>
-                <button onClick={() => { setShowCreate(false); resetCreate(); }} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
+                <button onClick={() => { setShowCreate(false); resetCreate(); }} className="text-zinc-400 hover:text-zinc-100 cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
 
               <div className="p-5 space-y-5 overflow-y-auto max-h-[70vh]">
@@ -706,10 +738,10 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                 )}
               </div>
 
-              <div className="flex gap-3 p-5 border-t border-slate-200">
-                <button onClick={() => { setShowCreate(false); resetCreate(); }} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold transition cursor-pointer">Hủy</button>
+              <div className="flex gap-3 p-5 border-t border-zinc-700">
+                <button onClick={() => { setShowCreate(false); resetCreate(); }} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 hover:bg-zinc-800 rounded-lg text-sm font-bold transition cursor-pointer">Hủy</button>
                 <button onClick={handleCreate} disabled={saving || (draftItems.filter(it => it.productId).length === 0)}
-                  className={`flex-1 px-4 py-2 disabled:opacity-60 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer ${revisingOrder ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                  className={`flex-1 px-4 py-2 disabled:!opacity-60 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer ${revisingOrder ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-700'}`}>
                   {saving ? 'Đang lưu...' : revisingOrder ? 'Tạo phiếu điều chỉnh' : 'Tạo phiếu'}
                 </button>
               </div>
@@ -721,19 +753,19 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       {/* Delete Confirm */}
       <AnimatePresence>
         {deleteConfirm && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
-              <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Trash2 className="w-6 h-6 text-rose-600" />
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+              <div className="w-12 h-12 bg-rose-900/40 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Trash2 className="w-6 h-6 text-rose-400" />
               </div>
-              <h3 className="font-bold text-slate-800 mb-2">Xóa phiếu?</h3>
-              <p className="text-sm text-slate-500 mb-1">Phiếu sẽ bị xóa vĩnh viễn.</p>
-              <p className="text-xs text-amber-600 mb-5">Lưu ý: Tồn kho sẽ không tự động điều chỉnh lại.</p>
+              <h3 className="font-bold text-zinc-100 mb-2">Xóa phiếu?</h3>
+              <p className="text-sm text-zinc-400 mb-1">Phiếu sẽ bị xóa vĩnh viễn.</p>
+              <p className="text-xs text-amber-400 mb-5">Lưu ý: Tồn kho sẽ không tự động điều chỉnh lại.</p>
               <div className="flex gap-3">
-                <button onClick={() => setDeleteConfirm(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={() => setDeleteConfirm(null)} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer hover:bg-zinc-800">Hủy</button>
                 <button onClick={async () => { await onDelete(deleteConfirm); setDeleteConfirm(null); }}
-                  className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold cursor-pointer">Xóa</button>
+                  className="flex-1 px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-lg text-sm font-bold cursor-pointer">Xóa</button>
               </div>
             </motion.div>
           </div>
@@ -743,21 +775,21 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       {/* History Detail Modal */}
       <AnimatePresence>
         {viewingHistoryOrder && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[70] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[70] overflow-y-auto">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-3xl my-4">
-              <div className="flex items-center justify-between p-5 border-b border-slate-200">
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-5xl my-4">
+              <div className="flex items-center justify-between p-5 border-b border-zinc-700">
                 <div>
-                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                    <GitBranch className="w-4 h-4 text-amber-600" />
+                  <h3 className="font-bold text-zinc-100 flex items-center gap-2">
+                    <GitBranch className="w-4 h-4 text-amber-400" />
                     Chi tiết phiếu: {viewingHistoryOrder.id}
                   </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="text-xs text-zinc-400 mt-0.5">
                     {viewingHistoryOrder.type === 'import' ? 'Nhập hàng' : 'Xuất hàng'} · {new Date(viewingHistoryOrder.timestamp).toLocaleString('vi-VN')}
                     {viewingHistoryOrder.partnerName && ` · ${viewingHistoryOrder.partnerName}`}
                   </p>
                 </div>
-                <button onClick={() => setViewingHistoryOrder(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button>
+                <button onClick={() => setViewingHistoryOrder(null)} className="text-zinc-400 hover:text-zinc-100 cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
               <div className="p-5 overflow-x-auto">
                 {viewingHistoryOrder.notes?.startsWith('[DC:') && (
@@ -813,8 +845,8 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                   <p className="text-xs text-slate-400 mt-3 italic">{viewingHistoryOrder.notes}</p>
                 )}
               </div>
-              <div className="p-5 border-t border-slate-200 flex justify-end">
-                <button onClick={() => setViewingHistoryOrder(null)} className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-bold cursor-pointer">Đóng</button>
+              <div className="p-5 border-t border-zinc-700 flex justify-end">
+                <button onClick={() => setViewingHistoryOrder(null)} className="px-4 py-2 border border-zinc-600 text-zinc-300 hover:bg-zinc-800 rounded-lg text-sm font-bold cursor-pointer">Đóng</button>
               </div>
             </motion.div>
           </div>
@@ -824,44 +856,44 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       {/* Payment Modal */}
       <AnimatePresence>
         {payingOrder && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-              <h3 className="font-bold text-slate-800 mb-1">Thanh toán phiếu nhập</h3>
-              <p className="text-xs text-slate-500 font-mono mb-4">{payingOrder.id} · {payingOrder.partnerName}</p>
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md p-6">
+              <h3 className="font-bold text-zinc-100 mb-1">Thanh toán phiếu nhập</h3>
+              <p className="text-xs text-zinc-400 font-mono mb-4">{payingOrder.id} · {payingOrder.partnerName}</p>
               <div className="space-y-3 mb-5">
-                <div className="flex justify-between text-sm"><span className="text-slate-600">Tổng phiếu:</span><span className="font-mono font-bold">{formatVND(payingOrder.totalAmount)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-slate-600">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingOrder.paidAmount)}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-slate-600">Còn nợ:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
-                <div className="border-t border-slate-200 pt-3 space-y-2">
+                <div className="flex justify-between text-sm"><span className="text-zinc-400">Tổng phiếu:</span><span className="font-mono font-bold text-zinc-100">{formatVND(payingOrder.totalAmount)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-zinc-400">Đã trả:</span><span className="font-mono text-emerald-400">{formatVND(payingOrder.paidAmount)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-zinc-300 font-bold">Còn nợ:</span><span className="font-mono font-bold text-rose-400">{formatVND(payingOrder.totalAmount - payingOrder.paidAmount)}</span></div>
+                <div className="border-t border-zinc-700 pt-3 space-y-2">
                   <div>
-                    <label className="text-xs font-bold text-slate-600 mb-1.5 block">Hình thức thanh toán</label>
+                    <label className="text-xs font-bold text-zinc-400 mb-1.5 block">Hình thức thanh toán</label>
                     <div className="flex gap-2">
                       {(['bank', 'cash'] as const).map(m => (
                         <button key={m} onClick={() => setPayMethod(m)}
-                          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs font-bold transition cursor-pointer ${payMethod === m ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs font-bold transition cursor-pointer ${payMethod === m ? 'bg-emerald-700 border-emerald-600 text-white' : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500'}`}>
                           {m === 'bank' ? <><Building2 className="w-3.5 h-3.5" /> Chuyển khoản</> : <><Banknote className="w-3.5 h-3.5" /> Tiền mặt</>}
                         </button>
                       ))}
                     </div>
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={payFull} onChange={e => { setPayFull(e.target.checked); if (e.target.checked) setPayAmount(String(payingOrder.totalAmount - payingOrder.paidAmount)); }} className="w-4 h-4 cursor-pointer" />
-                    <span className="text-sm font-medium text-slate-700">Thanh toán toàn bộ</span>
+                    <input type="checkbox" checked={payFull} onChange={e => { setPayFull(e.target.checked); if (e.target.checked) setPayAmount(String(payingOrder.totalAmount - payingOrder.paidAmount)); }} className="w-4 h-4 cursor-pointer accent-emerald-500" />
+                    <span className="text-sm font-medium text-zinc-300">Thanh toán toàn bộ</span>
                   </label>
                   {!payFull && (
                     <div>
-                      <label className="text-xs font-bold text-slate-600 mb-1 block">Số tiền</label>
+                      <label className="text-xs font-bold text-zinc-400 mb-1 block">Số tiền</label>
                       <input type="number" min={0} value={payAmount} onChange={e => setPayAmount(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" />
+                        className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none focus:border-emerald-500 bg-zinc-800 text-zinc-100" />
                     </div>
                   )}
                 </div>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={() => setPayingOrder(null)} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer hover:bg-zinc-800">Hủy</button>
                 <button onClick={confirmPay} disabled={saving}
-                  className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                  className="flex-1 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:!opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
                   {saving ? 'Đang lưu...' : 'Xác nhận'}
                 </button>
               </div>
