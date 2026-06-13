@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Partner, PurchaseOrder, PaymentLog } from '../types';
-import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine, Download, Upload, ChevronDown, MapPin, Building2, CreditCard, CheckCircle2, Banknote } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, Handshake, Phone, Mail, Tag, ArrowDownToLine, Download, Upload, ChevronDown, MapPin, Building2, CreditCard, CheckCircle2, Banknote, Hash } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { insertPaymentLog } from '../lib/db';
@@ -291,6 +291,7 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
               <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
                 <tr>
                   <th className="px-3 py-3 w-10 text-center text-zinc-400 text-xs font-bold uppercase">#</th>
+                  <th className="px-4 py-3">Mã ĐT</th>
                   <th className="px-4 py-3">Họ tên</th>
                   <th className="px-4 py-3">Thương hiệu</th>
                   <th className="px-4 py-3">Điện thoại</th>
@@ -311,10 +312,12 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                         onClick={() => setExpandedId(isExpanded ? null : p.id)}
                       >
                         <td className="px-3 py-3 text-center text-zinc-500 text-xs">{idx + 1}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-800">
-                          {p.fullName}
-                          {p.code && <span className="text-[10px] font-mono text-zinc-500 ml-1">{p.code}</span>}
+                        <td className="px-4 py-3 font-mono text-xs">
+                          {p.code
+                            ? <span className="px-2 py-0.5 bg-amber-900/30 text-amber-400 border border-amber-700/50 rounded font-bold">{p.code}</span>
+                            : <span className="text-zinc-600">—</span>}
                         </td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">{p.fullName}</td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
                             {p.brands.map(b => <span key={b} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] font-bold rounded-md">{b}</span>)}
@@ -333,10 +336,21 @@ export default function Partners({ partners, purchaseOrders, onAdd, onUpdate, on
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={7} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
+                          <td colSpan={8} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
                             <div className="space-y-3">
                               {/* Info grid — always show phone/email/address */}
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                                {/* Mã đối tác */}
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <Hash className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Mã đối tác</p>
+                                    {p.code
+                                      ? <p className="text-amber-600 font-mono font-bold">{p.code}</p>
+                                      : <p className="text-slate-400 italic">Chưa có</p>}
+                                  </div>
+                                </div>
+
                                 {/* Điện thoại — luôn hiện */}
                                 <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
                                   <Phone className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />

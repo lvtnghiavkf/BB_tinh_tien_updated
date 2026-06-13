@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Customer, Invoice } from '../types';
-import { Plus, Pencil, Trash2, Search, X, User, Calendar, ShoppingBag, Download, Upload, ChevronDown, Phone, Mail, MapPin } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, User, Calendar, ShoppingBag, Download, Upload, ChevronDown, Phone, Mail, MapPin, Hash } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
@@ -185,6 +185,7 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
               <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
                 <tr>
                   <th className="px-3 py-3 w-10 text-center text-zinc-400 text-xs font-bold uppercase">#</th>
+                  <th className="px-4 py-3">Mã KH</th>
                   <th className="px-4 py-3">Họ tên</th>
                   <th className="px-4 py-3">Điện thoại</th>
                   <th className="px-4 py-3">Ngày sinh</th>
@@ -201,10 +202,12 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                       onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
                     >
                       <td className="px-3 py-3 text-center text-zinc-500 text-xs">{idx + 1}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-800">
-                        {c.fullName}
-                        {c.code && <span className="text-[10px] font-mono text-zinc-500 ml-1">{c.code}</span>}
+                      <td className="px-4 py-3 font-mono text-xs">
+                        {c.code
+                          ? <span className="px-2 py-0.5 bg-amber-900/30 text-amber-400 border border-amber-700/50 rounded font-bold">{c.code}</span>
+                          : <span className="text-zinc-600">—</span>}
                       </td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">{c.fullName}</td>
                       <td className="px-4 py-3 font-mono text-slate-600">{c.phone}</td>
                       <td className="px-4 py-3 text-slate-500 text-xs">{c.birthDate ? new Date(c.birthDate + 'T00:00:00').toLocaleDateString('vi-VN') : '—'}</td>
                       <td className="px-4 py-3 text-slate-500 text-xs">{c.email || '—'}</td>
@@ -217,10 +220,21 @@ export default function Customers({ customers, invoices, onAdd, onUpdate, onDele
                       const stats = customerStats[c.phone];
                       return (
                         <tr>
-                          <td colSpan={7} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
+                          <td colSpan={8} className="px-4 py-4 border-t border-slate-200 bg-zinc-800/20" onClick={e => e.stopPropagation()}>
                             <div className="space-y-3">
                               {/* Info grid */}
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                                {/* Mã khách hàng */}
+                                <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
+                                  <Hash className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="font-bold text-slate-400 uppercase tracking-wider text-[10px] mb-0.5">Mã khách hàng</p>
+                                    {c.code
+                                      ? <p className="text-amber-600 font-mono font-bold">{c.code}</p>
+                                      : <p className="text-slate-400 italic">Chưa có</p>}
+                                  </div>
+                                </div>
+
                                 {/* Điện thoại — luôn hiện */}
                                 <div className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex gap-2">
                                   <Phone className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
