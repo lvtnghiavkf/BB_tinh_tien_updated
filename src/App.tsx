@@ -226,7 +226,7 @@ export default function App() {
     <div className="min-h-screen bg-zinc-950 text-amber-400 font-sans flex flex-col justify-between antialiased">
       {/* Header Navigation Bar */}
       <header className="bg-zinc-900 border-b border-zinc-700 shadow-xs select-none sticky top-0 z-40 transition-all duration-200">
-        <div className="w-full px-3 sm:px-5 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
           {/* Logo Brand */}
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-xs">
@@ -340,7 +340,7 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 w-full px-3 sm:px-5 py-4 z-10">
+      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-4 z-10">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -400,7 +400,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="bg-zinc-900 border-t border-zinc-700 py-4 select-none">
-        <div className="w-full px-3 text-center text-xs text-slate-500 font-medium">
+        <div className="w-full px-4 sm:px-6 text-center text-xs text-slate-500 font-medium">
           <p>© 2026 VietPOS POS System. Hỗ trợ in hóa đơn K80 và liên thông mã quét VietQR thuận tiện.</p>
         </div>
       </footer>

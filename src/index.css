@@ -7,7 +7,7 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-html { font-size: 14px; }
+html { font-size: clamp(14px, 0.9vw + 2.5px, 18px); }
 
 /* Print Styles */
 @media print {

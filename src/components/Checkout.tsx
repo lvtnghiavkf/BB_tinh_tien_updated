@@ -209,7 +209,7 @@ export default function Checkout({
   const quickDiscountVND = [5000, 10000, 20000, 50000];
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
       {/* LEFT COLUMN */}
       <div className="lg:col-span-7 flex flex-col space-y-4">
 
@@ -309,7 +309,7 @@ export default function Checkout({
         </div>
 
         {/* Products Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 overflow-y-auto max-h-[480px] pr-1">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 overflow-y-auto max-h-[calc(100vh-380px)] pr-1">
           {availableProducts.map((p) => {
             const inCartItem = cart.find((item) => item.product.id === p.id);
             const inCartQty = inCartItem?.quantity || 0;
@@ -375,7 +375,7 @@ export default function Checkout({
       </div>
 
       {/* RIGHT COLUMN: Cart */}
-      <form onSubmit={handleCheckout} className="lg:col-span-5 bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-[750px]">
+      <form onSubmit={handleCheckout} className="lg:col-span-5 bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-[calc(100vh-130px)] min-h-[600px]">
         {/* Cart Header */}
         <div>
           <div className="flex items-center justify-between pb-3 border-b border-slate-200">
@@ -400,7 +400,7 @@ export default function Checkout({
           </div>
 
           {/* Cart Items */}
-          <div className="overflow-y-auto max-h-[200px] my-3 pr-1 divide-y divide-slate-100">
+          <div className="overflow-y-auto flex-1 my-3 pr-1 divide-y divide-slate-100">
             {cart.length === 0 ? (
               <div className="py-8 text-center text-slate-400 flex flex-col items-center justify-center">
                 <ShoppingCart className="w-8 h-8 stroke-1 text-slate-300 mb-2 animate-bounce" />
