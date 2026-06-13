@@ -314,7 +314,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
 
   const salaryTotalByName = useMemo(() => {
     const map: Record<string, number> = {};
-    salaryEntries.forEach(e => { map[e.fullName] = (map[e.fullName] || 0) + e.amount; });
+    salaryEntries.forEach(e => { map[e.fullName] = (map[e.fullName] || 0) + getTotalSalary(e); });
     return map;
   }, [salaryEntries]);
 
@@ -1355,7 +1355,7 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Số tiền (VNĐ) <span className="text-rose-500">*</span></label>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">{salaryForm.calcType === 'lump' ? 'Tổng tiền đợt (VNĐ)' : 'Đơn giá / ngày (VNĐ)'} <span className="text-rose-500">*</span></label>
                     <input type="number" min={0} value={salaryForm.amount} onChange={e => setSalaryForm(f => ({ ...f, amount: e.target.value }))}
                       className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500" placeholder="5000000" />
                   </div>
@@ -1455,12 +1455,12 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                   <h3 className="font-bold text-zinc-100 mb-1">Trả lương — {payingSalary.fullName}</h3>
                   <p className="text-xs text-zinc-400 font-mono mb-4">{payingSalary.dateFrom} → {payingSalary.dateTo}</p>
                   <div className="space-y-2 mb-4 text-sm">
-                    <div className="flex justify-between"><span className="text-zinc-300">Tổng lương:</span><span className="font-mono font-bold">{formatVND(payingSalary.amount)}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-300">Tổng lương:</span><span className="font-mono font-bold">{formatVND(getTotalSalary(payingSalary))}</span></div>
                     <div className="flex justify-between"><span className="text-zinc-300">Đã trả:</span><span className="font-mono text-emerald-600">{formatVND(payingSalary.paidAmount ?? 0)}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-300">Còn lại:</span><span className="font-mono font-bold text-rose-600">{formatVND(payingSalary.amount - (payingSalary.paidAmount ?? 0))}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-300">Còn lại:</span><span className="font-mono font-bold text-rose-600">{formatVND(getTotalSalary(payingSalary) - (payingSalary.paidAmount ?? 0))}</span></div>
                     <div className="border-t border-zinc-700 pt-3 space-y-2">
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={salaryPayFull} onChange={e => { setSalaryPayFull(e.target.checked); if (e.target.checked) setSalaryPayAmount(String(payingSalary.amount - (payingSalary.paidAmount ?? 0))); }} className="w-4 h-4" />
+                        <input type="checkbox" checked={salaryPayFull} onChange={e => { setSalaryPayFull(e.target.checked); if (e.target.checked) setSalaryPayAmount(String(getTotalSalary(payingSalary) - (payingSalary.paidAmount ?? 0))); }} className="w-4 h-4" />
                         <span className="text-sm font-medium text-zinc-300">Trả toàn bộ còn lại</span>
                       </label>
                       {!salaryPayFull && (
