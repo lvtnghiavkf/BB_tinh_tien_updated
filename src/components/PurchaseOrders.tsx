@@ -643,7 +643,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
         {showCreate && (
           <motion.div
             initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
-            className="fixed inset-0 bg-zinc-950 z-50 flex flex-col"
+            className="fixed inset-0 bg-zinc-950 z-[200] flex flex-col"
           >
             {/* Header */}
             <div className={`flex items-center gap-3 px-4 py-3 border-b shrink-0 ${revisingOrder ? 'bg-amber-950/30 border-amber-700' : 'bg-zinc-900 border-zinc-700'}`}>
@@ -674,7 +674,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
               <div className="flex flex-col flex-1 overflow-hidden bg-white">
 
                 {/* Top search */}
-                <div className="px-4 pt-4 pb-3 border-b border-slate-200 bg-slate-50 relative z-20 shrink-0">
+                <div className="px-4 pt-6 pb-4 border-b border-slate-200 bg-slate-50 relative z-20 shrink-0">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                     <input
@@ -783,7 +783,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
               <div className="w-80 shrink-0 border-l border-zinc-700 bg-zinc-900 flex flex-col">
 
                 {/* Import/Export selector — aligned with left search bar */}
-                <div className="px-4 pt-4 pb-3 border-b border-zinc-700 shrink-0">
+                <div className="px-4 pt-6 pb-4 border-b border-zinc-700 shrink-0">
                   {!revisingOrder ? (
                     <div className="flex gap-1 bg-zinc-800 rounded-lg p-0.5">
                       {(['import', 'export'] as const).map(t => (
