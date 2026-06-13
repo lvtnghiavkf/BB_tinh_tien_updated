@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Product, Partner, PurchaseOrder, PaymentLog } from '../types';
-import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, ChevronsUpDown, Search, Download, ChevronDown, GitBranch, History, Banknote, Building2, Scan } from 'lucide-react';
+import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, ChevronsUpDown, Search, Download, ChevronDown, GitBranch, History, Banknote, Building2, Scan, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { insertPaymentLog } from '../lib/db';
@@ -42,7 +42,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
   const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0, 16));
   const [draftNotes, setDraftNotes] = useState('');
-  const [draftItems, setDraftItems] = useState<DraftItem[]>([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0, barcodeInput: '' }]);
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
 
   // Revision system state
   const [revisingOrder, setRevisingOrder] = useState<PurchaseOrder | null>(null);
@@ -52,6 +52,15 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   const [viewingHistoryOrder, setViewingHistoryOrder] = useState<PurchaseOrder | null>(null);
 
   const [activeDropdown, setActiveDropdown] = useState<{ idx: number; field: 'name' | 'sku' | 'barcode' } | null>(null);
+
+  // Full-screen create form extras
+  const [topSearch, setTopSearch] = useState('');
+  const [showTopSearch, setShowTopSearch] = useState(false);
+  const [draftDiscount, setDraftDiscount] = useState(0);
+  const [draftInitialPay, setDraftInitialPay] = useState(0);
+  const [draftInitialPayFull, setDraftInitialPayFull] = useState(false);
+  const [draftInitialPayMethod, setDraftInitialPayMethod] = useState<'bank' | 'cash'>('bank');
+
   const partnerDropdownRef = useRef<HTMLDivElement>(null);
 
   const filteredPartners = useMemo(() => {
@@ -67,6 +76,33 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     setDraftPartnerId(p.id);
     setPartnerSearch(`${p.fullName}${p.brands.length ? ' — ' + p.brands.join(', ') : ''}`);
     setShowPartnerDropdown(false);
+  }
+
+  const topSearchSuggestions = useMemo(() => {
+    const q = topSearch.toLowerCase().trim();
+    if (!q) return products.slice(0, 15);
+    return products.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.sku.toLowerCase().includes(q) ||
+      (p.barcode && p.barcode.includes(q))
+    ).slice(0, 15);
+  }, [topSearch, products]);
+
+  function addProductToDraft(productId: string) {
+    const prod = products.find(p => p.id === productId);
+    if (!prod) return;
+    setDraftItems(prev => {
+      const existing = prev.findIndex(it => it.productId === productId);
+      if (existing >= 0) {
+        return prev.map((it, i) => i === existing ? { ...it, quantity: it.quantity + 1 } : it);
+      }
+      return [...prev, {
+        productId: prod.id, productName: prod.name, sku: prod.sku,
+        quantity: 1, unitCost: prod.costPrice, barcodeInput: prod.barcode ?? '',
+      }];
+    });
+    setTopSearch('');
+    setShowTopSearch(false);
   }
 
   function exportExcel() {
@@ -90,7 +126,6 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     XLSX.writeFile(wb, `xuat_nhap_hang_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
-  // Detect revision: ID contains "." (e.g. PO123.1) OR has parentId from legacy DB
   function getParentId(o: PurchaseOrder): string | null {
     if (o.parentId) return o.parentId;
     const dot = o.id.lastIndexOf('.');
@@ -98,14 +133,9 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     return null;
   }
 
-  // Group: for each root+revisions family, show only the LATEST revision as main row.
-  // Original + older revisions appear in the expanded panel "Lịch sử điều chỉnh".
-  // Build a map: rootId → { representative: PurchaseOrder; history: PurchaseOrder[] }
   const orderFamilies = useMemo(() => {
-    // Collect ALL orders (not just filtered) to build revision map across families
-    const revisionMap = new Map<string, PurchaseOrder[]>(); // rootId → [rev1, rev2, ...]
-    const rootMap = new Map<string, PurchaseOrder>();        // rootId → root order
-
+    const revisionMap = new Map<string, PurchaseOrder[]>();
+    const rootMap = new Map<string, PurchaseOrder>();
     orders.forEach(o => {
       const pid = getParentId(o);
       if (pid) {
@@ -116,27 +146,16 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
         rootMap.set(o.id, o);
       }
     });
-
-    // For each root, pick representative = latest revision (or root if no revisions)
-    const families: Array<{
-      representative: PurchaseOrder;
-      root: PurchaseOrder;
-      revisions: PurchaseOrder[]; // sorted oldest→newest
-    }> = [];
-
+    const families: Array<{ representative: PurchaseOrder; root: PurchaseOrder; revisions: PurchaseOrder[] }> = [];
     rootMap.forEach((root) => {
       const revs = (revisionMap.get(root.id) ?? []).sort((a, b) => a.id.localeCompare(b.id));
       const representative = revs.length > 0 ? revs[revs.length - 1] : root;
       families.push({ representative, root, revisions: revs });
     });
-
-    // Sort families by representative timestamp descending
     families.sort((a, b) => b.representative.timestamp.localeCompare(a.representative.timestamp));
-
     return families;
   }, [orders]);
 
-  // Apply filter on top of families
   const filteredFamilies = useMemo(() => {
     return orderFamilies.filter(f => {
       const rep = f.representative;
@@ -156,9 +175,15 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     setShowPartnerDropdown(false);
     setDraftDate(new Date().toISOString().slice(0, 16));
     setDraftNotes('');
-    setDraftItems([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0, barcodeInput: '' }]);
+    setDraftItems([]);
     setRevisingOrder(null);
     setReviseNotes('');
+    setTopSearch('');
+    setShowTopSearch(false);
+    setDraftDiscount(0);
+    setDraftInitialPay(0);
+    setDraftInitialPayFull(false);
+    setDraftInitialPayMethod('bank');
   }
 
   function openRevise(o: PurchaseOrder) {
@@ -183,6 +208,12 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       barcodeInput: products.find(p => p.id === it.productId)?.barcode ?? '',
     })));
     setReviseNotes('');
+    setTopSearch('');
+    setShowTopSearch(false);
+    setDraftDiscount(0);
+    setDraftInitialPay(0);
+    setDraftInitialPayFull(false);
+    setDraftInitialPayMethod('bank');
     setShowCreate(true);
   }
 
@@ -225,14 +256,12 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     let finalNotes: string | undefined;
 
     if (revisingOrder) {
-      // Root ID = strip any existing revision suffix
       const rootId = getParentId(revisingOrder) ?? revisingOrder.id;
       const revCount = orders.filter(o => {
         const pid = getParentId(o);
         return pid === rootId;
       }).length;
       newOrderId = `${rootId}.${revCount + 1}`;
-      // Encode revision info in notes (no DB column needed)
       const noteLines = [`[DC: ${revisingOrder.id}]`];
       if (reviseNotes.trim()) noteLines.push(reviseNotes.trim());
       if (draftNotes.trim()) noteLines.push(draftNotes.trim());
@@ -243,6 +272,12 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       finalNotes = draftNotes.trim() || undefined;
     }
 
+    const grossAmount = validItems.reduce((s, it) => s + it.quantity * it.unitCost, 0);
+    const netAmount = Math.max(0, grossAmount - draftDiscount);
+    const paidAtCreation = draftType === 'import'
+      ? (draftInitialPayFull ? netAmount : Math.min(draftInitialPay, netAmount))
+      : 0;
+
     const order: PurchaseOrder = {
       id: newOrderId,
       type: draftType,
@@ -250,10 +285,9 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       partnerName: partner?.fullName ?? (revisingOrder?.partnerName ?? ''),
       timestamp: new Date(draftDate).toISOString(),
       items: validItems.map(it => ({ productId: it.productId, productName: it.productName, sku: it.sku, quantity: it.quantity, unitCost: it.unitCost })),
-      totalAmount: validItems.reduce((s, it) => s + it.quantity * it.unitCost, 0),
-      paidAmount: 0,
+      totalAmount: netAmount,
+      paidAmount: paidAtCreation,
       notes: finalNotes,
-      // parentId/revisionNote intentionally omitted — no DB columns needed
     };
 
     setSaving(true);
@@ -261,6 +295,19 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       await onAdd(order);
       if (draftType === 'import') {
         onUpdateProductsStock(validItems.map(it => ({ id: it.productId, delta: it.quantity })));
+      }
+      if (paidAtCreation > 0 && onPaymentLogAdded) {
+        const log: PaymentLog = {
+          id: `PL${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          type: 'debt',
+          referenceId: newOrderId,
+          referenceName: partner?.fullName ?? '',
+          amount: paidAtCreation,
+          paymentMethod: draftInitialPayMethod,
+          remaining: netAmount - paidAtCreation,
+        };
+        try { await insertPaymentLog(log); onPaymentLogAdded(log); } catch (_) {}
       }
       setShowCreate(false);
       resetCreate();
@@ -511,7 +558,6 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
 
                       {activeTab === 'history' && (
                         <div className="px-4 pb-4 pt-3 space-y-3">
-                          {/* Payment logs */}
                           {orderLogs.length > 0 && (
                             <div>
                               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Lịch sử thanh toán</p>
@@ -534,12 +580,10 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                               </div>
                             </div>
                           )}
-                          {/* Revision history */}
                           {hasRevisions && (
                             <div>
                               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Lịch sử điều chỉnh</p>
                               <div className="space-y-2">
-                                {/* Show root first */}
                                 <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs cursor-pointer hover:border-slate-300 transition"
                                   onClick={e => { e.stopPropagation(); setViewingHistoryOrder(root); }}>
                                   <div className="flex items-center justify-between mb-1">
@@ -561,7 +605,6 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                                     <p className="text-blue-500 mt-0.5 font-semibold">Nhấn để xem chi tiết →</p>
                                   </div>
                                 ))}
-                                {/* Current (latest) revision */}
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs cursor-pointer hover:border-blue-300 transition"
                                   onClick={e => { e.stopPropagation(); setViewingHistoryOrder(o); }}>
                                   <div className="flex items-center justify-between mb-1">
@@ -595,66 +638,168 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
         )}
       </div>
 
-      {/* Create / Revise Modal */}
+      {/* Create / Revise Modal — Full Screen */}
       <AnimatePresence>
         {showCreate && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-5xl my-4">
-              <div className={`flex items-center justify-between p-5 border-b ${revisingOrder ? 'bg-amber-900/20 border-amber-700' : 'border-zinc-700'}`}>
-                <div>
-                  <h3 className="font-bold text-zinc-100">
-                    {revisingOrder ? `Điều chỉnh phiếu ${revisingOrder.id}` : 'Tạo phiếu xuất nhập hàng'}
-                  </h3>
-                  {revisingOrder && (
-                    <p className="text-xs text-amber-400 mt-0.5">Phiếu gốc sẽ được giữ nguyên. Phiếu điều chỉnh mới sẽ được tạo.</p>
-                  )}
+          <motion.div
+            initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
+            className="fixed inset-0 bg-zinc-950 z-50 flex flex-col"
+          >
+            {/* Header */}
+            <div className={`flex items-center gap-3 px-4 py-3 border-b shrink-0 ${revisingOrder ? 'bg-amber-950/30 border-amber-700' : 'bg-zinc-900 border-zinc-700'}`}>
+              <button onClick={() => { setShowCreate(false); resetCreate(); }}
+                className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100 cursor-pointer transition shrink-0">
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h3 className={`font-bold text-base ${revisingOrder ? 'text-amber-300' : 'text-zinc-100'}`}>
+                {revisingOrder ? `Điều chỉnh phiếu ${revisingOrder.id}` : (draftType === 'import' ? 'Nhập hàng' : 'Xuất hàng')}
+              </h3>
+              {!revisingOrder && (
+                <div className="flex gap-1 bg-zinc-800 rounded-lg p-0.5 ml-2">
+                  {(['import', 'export'] as const).map(t => (
+                    <button key={t} onClick={() => setDraftType(t)}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer flex items-center gap-1 ${draftType === t ? (t === 'import' ? 'bg-blue-600 text-white' : 'bg-amber-500 text-white') : 'text-zinc-400 hover:text-zinc-200'}`}>
+                      {t === 'import' ? <><ArrowDownToLine className="w-3 h-3" /> Nhập hàng</> : <><ArrowUpFromLine className="w-3 h-3" /> Xuất hàng</>}
+                    </button>
+                  ))}
                 </div>
-                <button onClick={() => { setShowCreate(false); resetCreate(); }} className="text-zinc-400 hover:text-zinc-100 cursor-pointer"><X className="w-5 h-5" /></button>
-              </div>
+              )}
+              {revisingOrder && <p className="text-xs text-amber-400/70 ml-2">Phiếu gốc giữ nguyên — phiếu điều chỉnh mới sẽ được tạo</p>}
+            </div>
 
-              <div className="p-5 space-y-5 overflow-y-auto max-h-[70vh]">
-                {/* Revise notes (only when revising) */}
-                {revisingOrder && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                    <label className="text-xs font-bold text-amber-800 mb-1.5 block flex items-center gap-1">
-                      <GitBranch className="w-3.5 h-3.5" /> Lý do điều chỉnh
-                    </label>
-                    <input value={reviseNotes} onChange={e => setReviseNotes(e.target.value)}
-                      className="w-full px-3 py-2 border border-amber-200 bg-white rounded-lg text-sm focus:outline-none focus:border-amber-500"
-                      placeholder="VD: Cập nhật số lượng thực nhận, sửa đơn giá..." />
+            {/* Body — split left/right */}
+            <div className="flex flex-1 overflow-hidden">
+
+              {/* LEFT: product search + list */}
+              <div className="flex flex-col flex-1 overflow-hidden bg-white">
+
+                {/* Top search */}
+                <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50 relative z-20 shrink-0">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <input
+                      value={topSearch}
+                      onChange={e => { setTopSearch(e.target.value); setShowTopSearch(true); }}
+                      onFocus={() => setShowTopSearch(true)}
+                      onBlur={() => setTimeout(() => setShowTopSearch(false), 160)}
+                      onKeyDown={e => { if (e.key === 'Enter' && topSearchSuggestions.length > 0) addProductToDraft(topSearchSuggestions[0].id); }}
+                      placeholder="Tìm hàng hóa theo mã hoặc tên (Enter để thêm nhanh)"
+                      className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                    />
                   </div>
-                )}
-
-                {/* Type & Partner */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-bold text-slate-600 mb-2 block">Loại phiếu</label>
-                    <div className="flex gap-2">
-                      {(['import', 'export'] as const).map(t => (
-                        <button key={t} onClick={() => setDraftType(t)}
-                          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-bold transition cursor-pointer ${draftType === t ? (t === 'import' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-amber-500 bg-amber-50 text-amber-700') : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
-                          {t === 'import' ? <><ArrowDownToLine className="w-4 h-4" /> Nhập hàng</> : <><ArrowUpFromLine className="w-4 h-4" /> Xuất hàng</>}
+                  {showTopSearch && topSearchSuggestions.length > 0 && (
+                    <div className="absolute left-4 right-4 top-full mt-0.5 bg-white border border-slate-200 rounded-xl shadow-xl max-h-72 overflow-y-auto z-30">
+                      {topSearchSuggestions.map((p, i) => (
+                        <button key={p.id} type="button" onMouseDown={() => addProductToDraft(p.id)}
+                          className={`w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 transition flex items-center gap-3 border-b border-slate-50 last:border-0 ${i === 0 ? 'bg-blue-50/60' : ''}`}>
+                          {p.imageUrl
+                            ? <img src={p.imageUrl} className="w-9 h-9 rounded object-cover shrink-0 border border-slate-100" />
+                            : <div className="w-9 h-9 rounded bg-slate-100 shrink-0" />}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-slate-800 truncate">{p.name}</p>
+                            <p className="text-xs text-slate-400 font-mono">{p.sku}{p.barcode ? ` · ${p.barcode}` : ''}</p>
+                          </div>
+                          <div className="text-right shrink-0 text-xs">
+                            <p className="text-slate-400">Tồn: <span className="font-bold text-slate-700">{p.stock}</span></p>
+                            <p className="text-emerald-600 font-mono font-bold">{formatVND(p.sellingPrice)}</p>
+                          </div>
                         </button>
                       ))}
                     </div>
-                  </div>
+                  )}
+                </div>
+
+                {/* Items table */}
+                <div className="flex-1 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 z-10">
+                      <tr className="text-slate-500 font-bold text-xs uppercase tracking-wider">
+                        <th className="px-3 py-2.5 w-10"></th>
+                        <th className="px-3 py-2.5 text-center w-10">STT</th>
+                        <th className="px-3 py-2.5 text-left">Mã hàng</th>
+                        <th className="px-3 py-2.5 text-left">Tên hàng</th>
+                        <th className="px-3 py-2.5 text-center">ĐVT</th>
+                        <th className="px-3 py-2.5 text-right">Tồn kho</th>
+                        <th className="px-3 py-2.5 text-right">Giá vốn</th>
+                        <th className="px-3 py-2.5 text-right">Giá bán</th>
+                        <th className="px-3 py-2.5 text-right w-28">Số lượng</th>
+                        <th className="px-3 py-2.5 text-right w-36">Đơn giá</th>
+                        <th className="px-3 py-2.5 text-right">Thành tiền</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {draftItems.map((item, idx) => {
+                        const prod = products.find(p => p.id === item.productId);
+                        return (
+                          <tr key={idx} className="hover:bg-blue-50/40 group">
+                            <td className="px-3 py-2 text-center">
+                              <button onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}
+                                className="text-slate-300 hover:text-rose-500 cursor-pointer opacity-0 group-hover:opacity-100 transition">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                            <td className="px-3 py-2 text-center text-slate-400 text-xs">{idx + 1}</td>
+                            <td className="px-3 py-2 font-mono text-blue-600 font-bold text-xs">{item.sku || '—'}</td>
+                            <td className="px-3 py-2 text-slate-800 font-medium">{item.productName}</td>
+                            <td className="px-3 py-2 text-center text-slate-400 text-xs">{prod?.unit || '—'}</td>
+                            <td className="px-3 py-2 text-right font-mono text-slate-400 text-xs">{prod ? prod.stock : '—'}</td>
+                            <td className="px-3 py-2 text-right font-mono text-slate-400 text-xs">{prod ? formatVND(prod.costPrice) : '—'}</td>
+                            <td className="px-3 py-2 text-right font-mono text-emerald-600 text-xs">{prod ? formatVND(prod.sellingPrice) : '—'}</td>
+                            <td className="px-3 py-2">
+                              <input type="number" min={0.001} step={0.001} value={item.quantity}
+                                onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Number(e.target.value) || 1 } : it))}
+                                className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm text-right focus:outline-none focus:border-blue-500 bg-white font-bold" />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input type="number" min={0} value={item.unitCost}
+                                onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, unitCost: Number(e.target.value) || 0 } : it))}
+                                className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm text-right font-mono focus:outline-none focus:border-blue-500 bg-white" />
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono font-bold text-blue-700">{formatVND(item.quantity * item.unitCost)}</td>
+                          </tr>
+                        );
+                      })}
+                      {draftItems.length === 0 && (
+                        <tr>
+                          <td colSpan={11} className="px-3 py-16 text-center text-slate-400">
+                            <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                            <p className="text-sm">Tìm kiếm và chọn sản phẩm ở thanh tìm kiếm phía trên</p>
+                            <p className="text-xs text-slate-300 mt-1">Nhấn Enter để thêm nhanh sản phẩm đầu tiên trong gợi ý</p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Left footer */}
+                <div className="border-t border-slate-200 px-4 py-2.5 bg-slate-50 flex items-center justify-between shrink-0">
+                  <span className="text-xs text-slate-500">{draftItems.length} sản phẩm</span>
+                  <span className="text-sm font-bold text-slate-700">Tổng tiền hàng: <span className="font-mono text-blue-700">{formatVND(draftTotal)}</span></span>
+                </div>
+              </div>
+
+              {/* RIGHT: order info */}
+              <div className="w-80 shrink-0 border-l border-zinc-700 bg-zinc-900 flex flex-col">
+                <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+
+                  {/* Partner search */}
                   <div className="relative" ref={partnerDropdownRef}>
-                    <label className="text-xs font-bold text-slate-600 mb-2 block">
-                      Đối tác {draftType === 'import' ? <span className="text-rose-500">*</span> : <span className="text-slate-400">(tùy chọn)</span>}
+                    <label className="text-xs font-bold text-zinc-400 mb-1.5 block">
+                      {draftType === 'import' ? 'Nhà cung cấp' : 'Đối tác'} <span className="text-zinc-600">(tùy chọn)</span>
                     </label>
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
                       <input
                         value={partnerSearch}
                         onChange={e => { setPartnerSearch(e.target.value); setDraftPartnerId(''); setShowPartnerDropdown(true); }}
                         onFocus={() => setShowPartnerDropdown(true)}
-                        placeholder="Tìm tên hoặc thương hiệu..."
-                        className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+                        placeholder="Tìm nhà cung cấp..."
+                        className="w-full pl-8 pr-3 py-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500"
                       />
                     </div>
                     {showPartnerDropdown && filteredPartners.length > 0 && (
-                      <div className="absolute z-30 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                      <div className="absolute z-30 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
                         <div className="p-1">
                           <button type="button" onClick={() => { setDraftPartnerId(''); setPartnerSearch(''); setShowPartnerDropdown(false); }}
                             className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-slate-50 rounded-lg cursor-pointer">
@@ -670,207 +815,107 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                         </div>
                       </div>
                     )}
-                    {showPartnerDropdown && (
-                      <div className="fixed inset-0 z-20" onClick={() => setShowPartnerDropdown(false)} />
+                    {showPartnerDropdown && <div className="fixed inset-0 z-20" onClick={() => setShowPartnerDropdown(false)} />}
+                  </div>
+
+                  {/* Mã phiếu */}
+                  <div>
+                    <label className="text-xs font-bold text-zinc-400 mb-1.5 block">Mã phiếu</label>
+                    <p className="px-3 py-2 border border-zinc-700 rounded-lg text-sm bg-zinc-800/50 text-zinc-500 font-mono">
+                      {revisingOrder ? revisingOrder.id : 'Tự động'}
+                    </p>
+                  </div>
+
+                  {/* Ngày giờ */}
+                  <div>
+                    <label className="text-xs font-bold text-zinc-400 mb-1.5 block">Ngày giờ</label>
+                    <input type="datetime-local" value={draftDate} onChange={e => setDraftDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-100 focus:outline-none focus:border-blue-500" />
+                  </div>
+
+                  {/* Revise reason */}
+                  {revisingOrder && (
+                    <div>
+                      <label className="text-xs font-bold text-amber-400 mb-1.5 flex items-center gap-1 block">
+                        <GitBranch className="w-3.5 h-3.5" /> Lý do điều chỉnh
+                      </label>
+                      <input value={reviseNotes} onChange={e => setReviseNotes(e.target.value)}
+                        className="w-full px-3 py-2 border border-amber-600/50 bg-amber-950/20 rounded-lg text-sm text-zinc-100 focus:outline-none focus:border-amber-500"
+                        placeholder="VD: Cập nhật số lượng thực nhận..." />
+                    </div>
+                  )}
+
+                  {/* Summary */}
+                  <div className="border-t border-zinc-700 pt-4 space-y-3">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-zinc-400">Tổng tiền hàng</span>
+                      <span className="font-mono font-bold text-zinc-100">{formatVND(draftTotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-zinc-400">Giảm giá</span>
+                      <input type="number" min={0} value={draftDiscount}
+                        onChange={e => { setDraftDiscount(Number(e.target.value) || 0); setDraftInitialPayFull(false); }}
+                        className="w-28 px-2 py-1 border border-zinc-600 rounded text-right text-sm font-mono bg-zinc-800 text-zinc-100 focus:outline-none focus:border-blue-500" />
+                    </div>
+                    {draftType === 'import' && (
+                      <>
+                        <div className="flex justify-between items-center text-sm border-t border-zinc-700 pt-2">
+                          <span className="font-bold text-blue-400">Cần trả NCC</span>
+                          <span className="font-mono font-bold text-blue-400">{formatVND(Math.max(0, draftTotal - draftDiscount))}</span>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs text-zinc-400">Tiền trả nhà cung cấp</label>
+                          <div className="flex gap-2">
+                            {(['bank', 'cash'] as const).map(m => (
+                              <button key={m} onClick={() => setDraftInitialPayMethod(m)}
+                                className={`flex-1 py-1.5 rounded text-xs font-bold border transition cursor-pointer ${draftInitialPayMethod === m ? 'bg-emerald-700 border-emerald-600 text-white' : 'bg-zinc-800 border-zinc-600 text-zinc-400 hover:border-zinc-500'}`}>
+                                {m === 'bank' ? 'Chuyển khoản' : 'Tiền mặt'}
+                              </button>
+                            ))}
+                          </div>
+                          <input type="number" min={0} value={draftInitialPay}
+                            onChange={e => { setDraftInitialPay(Number(e.target.value) || 0); setDraftInitialPayFull(false); }}
+                            className="w-full px-3 py-2 border border-zinc-600 rounded-lg text-sm font-mono text-right bg-zinc-800 text-zinc-100 focus:outline-none focus:border-emerald-500" />
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={draftInitialPayFull}
+                              onChange={e => { setDraftInitialPayFull(e.target.checked); if (e.target.checked) setDraftInitialPay(Math.max(0, draftTotal - draftDiscount)); }}
+                              className="w-3.5 h-3.5 accent-emerald-500 cursor-pointer" />
+                            <span className="text-xs text-zinc-400">Thanh toán đủ ngay</span>
+                          </label>
+                        </div>
+                        <div className="flex justify-between items-center text-sm border-t border-zinc-700 pt-2">
+                          <span className="text-zinc-400">Tính vào công nợ</span>
+                          <span className={`font-mono font-bold ${Math.max(0, draftTotal - draftDiscount - draftInitialPay) > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            {formatVND(Math.max(0, draftTotal - draftDiscount - draftInitialPay))}
+                          </span>
+                        </div>
+                      </>
                     )}
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Ghi chú */}
                   <div>
-                    <label className="text-xs font-bold text-slate-600 mb-2 block">Ngày giờ</label>
-                    <input type="datetime-local" value={draftDate} onChange={e => setDraftDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-600 mb-2 block">Ghi chú</label>
-                    <input value={draftNotes} onChange={e => setDraftNotes(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+                    <label className="text-xs font-bold text-zinc-400 mb-1.5 block">Ghi chú</label>
+                    <textarea value={draftNotes} onChange={e => setDraftNotes(e.target.value)} rows={3}
+                      className="w-full px-3 py-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500 resize-none"
                       placeholder="Ghi chú phiếu..." />
                   </div>
                 </div>
 
-                {/* Items */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-bold text-slate-600">Danh sách hàng hóa</label>
-                    <button onClick={() => setDraftItems(prev => [...prev, { productId: '', productName: '', sku: '', quantity: 1, unitCost: 0, barcodeInput: '' }])}
-                      className="text-xs text-blue-600 hover:text-blue-700 font-bold cursor-pointer flex items-center gap-1">
-                      <Plus className="w-3.5 h-3.5" /> Thêm dòng
-                    </button>
-                  </div>
-                  <div className="overflow-x-auto -mx-5 px-5">
-                    <table className="w-full text-xs min-w-[900px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
-                          <th className="px-2 py-2 text-left w-6">#</th>
-                          <th className="px-2 py-2 text-left">Sản phẩm</th>
-                          <th className="px-2 py-2 text-left w-24">Mã SKU</th>
-                          <th className="px-2 py-2 text-left w-28">Barcode</th>
-                          <th className="px-2 py-2 text-center">Thương Hiệu</th>
-                          <th className="px-2 py-2 text-center">ĐVT</th>
-                          <th className="px-2 py-2 text-right">Tồn kho</th>
-                          <th className="px-2 py-2 text-right">Giá nhập cũ</th>
-                          <th className="px-2 py-2 text-right">Giá bán</th>
-                          <th className="px-2 py-2 text-right w-20">SL</th>
-                          <th className="px-2 py-2 text-right w-28">Giá nhập</th>
-                          <th className="px-2 py-2 text-right">T.Tiền</th>
-                          <th className="px-2 py-2 w-6"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {draftItems.map((item, idx) => {
-                          const prod = item.productId ? products.find(p => p.id === item.productId) : null;
-                          return (
-                            <tr key={idx} className="hover:bg-zinc-800/40">
-                              <td className="px-2 py-1.5 text-slate-400 text-center">{idx + 1}</td>
-                              {/* Tên sản phẩm — autocomplete */}
-                              <td className="px-2 py-1.5 relative">
-                                <input
-                                  value={item.productName}
-                                  onChange={e => handleProductNameInput(idx, e.target.value)}
-                                  onFocus={() => setActiveDropdown({ idx, field: 'name' })}
-                                  onBlur={closeDropdown}
-                                  placeholder="Tìm tên sản phẩm..."
-                                  className={`w-full px-2 py-1.5 border rounded-lg text-xs focus:outline-none min-w-[160px] ${item.productId ? 'border-blue-300 bg-blue-50 text-blue-800 font-semibold' : 'border-slate-200 bg-white text-slate-700 focus:border-blue-500'}`}
-                                />
-                                {activeDropdown?.idx === idx && activeDropdown.field === 'name' && (() => {
-                                  const q = item.productName.toLowerCase().trim();
-                                  const sugg = q
-                                    ? products.filter(p =>
-                                        p.name.toLowerCase().includes(q) ||
-                                        p.sku.toLowerCase().includes(q) ||
-                                        (p.barcode && p.barcode.includes(q))
-                                      ).slice(0, 10)
-                                    : products.slice(0, 10);
-                                  return sugg.length > 0 ? (
-                                    <div className="absolute left-0 top-full z-40 mt-0.5 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[220px] max-h-52 overflow-y-auto">
-                                      {sugg.map(p => (
-                                        <button key={p.id} type="button" onMouseDown={() => setItemProduct(idx, p.id)}
-                                          className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition flex flex-col border-b border-slate-50 last:border-0">
-                                          <span className="font-semibold text-slate-800">{p.name}</span>
-                                          <span className="text-slate-400 font-mono">{p.sku}{p.barcode ? ` · ${p.barcode}` : ''}</span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  ) : null;
-                                })()}
-                              </td>
-                              {/* Mã SKU — autocomplete */}
-                              <td className="px-2 py-1.5 relative">
-                                <input
-                                  value={item.sku}
-                                  onChange={e => handleSkuInput(idx, e.target.value)}
-                                  onFocus={() => setActiveDropdown({ idx, field: 'sku' })}
-                                  onBlur={closeDropdown}
-                                  placeholder="Nhập SKU..."
-                                  className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-mono focus:outline-none focus:border-amber-400 bg-white text-amber-700 min-w-[70px]"
-                                />
-                                {activeDropdown?.idx === idx && activeDropdown.field === 'sku' && (() => {
-                                  const q = item.sku.toLowerCase().trim();
-                                  const sugg = q
-                                    ? products.filter(p => p.sku.toLowerCase().includes(q)).slice(0, 10)
-                                    : products.filter(p => p.sku).slice(0, 10);
-                                  return sugg.length > 0 ? (
-                                    <div className="absolute left-0 top-full z-40 mt-0.5 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[200px] max-h-52 overflow-y-auto">
-                                      {sugg.map(p => (
-                                        <button key={p.id} type="button" onMouseDown={() => setItemProduct(idx, p.id)}
-                                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 transition flex flex-col border-b border-slate-50 last:border-0">
-                                          <span className="font-mono font-bold text-amber-700">{p.sku}</span>
-                                          <span className="text-slate-500">{p.name}</span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  ) : null;
-                                })()}
-                              </td>
-                              {/* Barcode — autocomplete */}
-                              <td className="px-2 py-1.5 relative">
-                                <div className="relative">
-                                  <Scan className="absolute left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
-                                  <input
-                                    value={item.barcodeInput}
-                                    onChange={e => handleBarcodeInput(idx, e.target.value)}
-                                    onFocus={() => setActiveDropdown({ idx, field: 'barcode' })}
-                                    onBlur={closeDropdown}
-                                    placeholder="Quét / nhập..."
-                                    className="w-full pl-6 pr-2 py-1 border border-slate-300 rounded text-xs font-mono focus:outline-none focus:border-blue-500 bg-white text-slate-700 min-w-[90px]"
-                                  />
-                                </div>
-                                {activeDropdown?.idx === idx && activeDropdown.field === 'barcode' && (() => {
-                                  const q = item.barcodeInput.trim();
-                                  const sugg = q
-                                    ? products.filter(p => p.barcode && p.barcode.includes(q)).slice(0, 10)
-                                    : products.filter(p => p.barcode).slice(0, 10);
-                                  return sugg.length > 0 ? (
-                                    <div className="absolute left-0 top-full z-40 mt-0.5 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[220px] max-h-52 overflow-y-auto">
-                                      {sugg.map(p => (
-                                        <button key={p.id} type="button" onMouseDown={() => setItemProduct(idx, p.id)}
-                                          className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition flex flex-col border-b border-slate-50 last:border-0">
-                                          <span className="font-mono font-bold text-slate-700 flex items-center gap-1"><Scan className="w-3 h-3 text-slate-400" />{p.barcode}</span>
-                                          <span className="text-slate-500">{p.name}</span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  ) : null;
-                                })()}
-                              </td>
-                              <td className="px-2 py-1.5 text-center text-slate-500">{prod?.brand || '—'}</td>
-                              <td className="px-2 py-1.5 text-center text-slate-500">{prod?.unit || '—'}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-slate-500">{prod ? prod.stock : '—'}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-slate-400">{prod ? (prod.costPrice / 1000).toFixed(0) + 'k' : '—'}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-emerald-600">{prod ? (prod.sellingPrice / 1000).toFixed(0) + 'k' : '—'}</td>
-                              <td className="px-2 py-1.5">
-                                <input type="number" min={0.001} step={0.001} value={item.quantity} onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Number(e.target.value) || 1 } : it))}
-                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-right focus:outline-none focus:border-blue-500" />
-                              </td>
-                              <td className="px-2 py-1.5">
-                                <input type="number" min={0} value={item.unitCost} onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, unitCost: Number(e.target.value) || 0 } : it))}
-                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-right font-mono focus:outline-none focus:border-blue-500" />
-                              </td>
-                              <td className="px-2 py-1.5 text-right font-mono font-bold text-blue-700">
-                                {item.quantity * item.unitCost > 0 ? (item.quantity * item.unitCost / 1000).toFixed(0) + 'k' : '—'}
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                {draftItems.length > 1 && (
-                                  <button onClick={() => setDraftItems(prev => prev.filter((_, i) => i !== idx))}
-                                    className="text-slate-400 hover:text-rose-600 cursor-pointer transition">
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="flex justify-end mt-3 pt-3 border-t border-slate-200">
-                    <div className="text-sm font-bold text-slate-800">
-                      Tổng cộng: <span className="font-mono text-blue-700">{formatVND(draftTotal)}</span>
-                    </div>
-                  </div>
+                {/* Action buttons */}
+                <div className="p-4 border-t border-zinc-700 space-y-2 shrink-0">
+                  <button onClick={handleCreate} disabled={saving || draftItems.length === 0}
+                    className={`w-full px-4 py-2.5 disabled:!opacity-50 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer ${revisingOrder ? 'bg-amber-600 hover:bg-amber-500' : draftType === 'import' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-amber-500 hover:bg-amber-400'}`}>
+                    {saving ? 'Đang lưu...' : revisingOrder ? 'Tạo phiếu điều chỉnh' : draftType === 'import' ? 'Nhập hàng' : 'Xuất hàng'}
+                  </button>
+                  <button onClick={() => { setShowCreate(false); resetCreate(); }}
+                    className="w-full px-4 py-2 border border-zinc-600 text-zinc-300 hover:bg-zinc-800 rounded-lg text-sm font-bold transition cursor-pointer">
+                    Hủy
+                  </button>
                 </div>
-
-                {draftType === 'import' && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700 flex items-center gap-2">
-                    <ArrowDownToLine className="w-4 h-4 shrink-0" />
-                    {revisingOrder
-                      ? 'Phiếu điều chỉnh nhập hàng sẽ cộng thêm vào tồn kho sau khi tạo.'
-                      : 'Phiếu nhập hàng sẽ tự động cộng vào tồn kho sau khi tạo.'}
-                  </div>
-                )}
               </div>
-
-              <div className="flex gap-3 p-5 border-t border-zinc-700">
-                <button onClick={() => { setShowCreate(false); resetCreate(); }} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 hover:bg-zinc-800 rounded-lg text-sm font-bold transition cursor-pointer">Hủy</button>
-                <button onClick={handleCreate} disabled={saving || (draftItems.filter(it => it.productId).length === 0)}
-                  className={`flex-1 px-4 py-2 disabled:!opacity-60 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer ${revisingOrder ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                  {saving ? 'Đang lưu...' : revisingOrder ? 'Tạo phiếu điều chỉnh' : 'Tạo phiếu'}
-                </button>
-              </div>
-            </motion.div>
-          </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
