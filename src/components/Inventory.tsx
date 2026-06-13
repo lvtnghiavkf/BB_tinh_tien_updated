@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Product, Invoice, ReturnOrder } from '../types';
+import { Product, Invoice, ReturnOrder, PurchaseOrder } from '../types';
 import { uploadProductImage } from '../lib/db';
 import {
   Plus, Search, Edit2, Trash2, Box, ArrowUpRight,
@@ -26,6 +26,7 @@ interface InventoryProps {
   onRestockProduct: (id: string, amount: number) => void;
   invoices?: Invoice[];
   returnOrders?: ReturnOrder[];
+  purchaseOrders?: PurchaseOrder[];
   onUpdateInvoice?: (inv: Invoice) => Promise<void>;
   onPrintInvoice?: (inv: Invoice) => void;
   onUpdateProductsStock?: (updates: { id: string; delta: number }[]) => Promise<void> | void;
@@ -53,6 +54,7 @@ export default function Inventory({
   onRestockProduct,
   invoices = [],
   returnOrders = [],
+  purchaseOrders = [],
   onUpdateInvoice,
   onPrintInvoice,
   onUpdateProductsStock,
@@ -165,8 +167,9 @@ export default function Inventory({
 
   // ── Thẻ kho — tính tồn cuối cho sản phẩm đang mở rộng ───────────────────────
   type LedgerRow =
-    | { entryType: 'sale';   inv: Invoice;      qty: number; unitPrice: number; cancelled: boolean; timestamp: string; tonCuoi: number | null }
-    | { entryType: 'return'; ro: ReturnOrder;   qty: number; unitPrice: number; cancelled: false;   timestamp: string; tonCuoi: number | null };
+    | { entryType: 'sale';     inv: Invoice;        qty: number; unitPrice: number; cancelled: boolean; timestamp: string; tonCuoi: number | null }
+    | { entryType: 'return';   ro: ReturnOrder;     qty: number; unitPrice: number; cancelled: false;   timestamp: string; tonCuoi: number | null }
+    | { entryType: 'purchase'; po: PurchaseOrder;   qty: number; unitPrice: number; cancelled: false;   timestamp: string; tonCuoi: number | null };
 
   const ledgerEntries = useMemo((): LedgerRow[] => {
     if (!expandedId) return [];
@@ -174,8 +177,9 @@ export default function Inventory({
     if (!ep) return [];
 
     type RawEntry =
-      | { entryType: 'sale';   inv: Invoice;    qty: number; unitPrice: number; cancelled: boolean; timestamp: string }
-      | { entryType: 'return'; ro: ReturnOrder; qty: number; unitPrice: number; cancelled: false;   timestamp: string };
+      | { entryType: 'sale';     inv: Invoice;      qty: number; unitPrice: number; cancelled: boolean; timestamp: string }
+      | { entryType: 'return';   ro: ReturnOrder;   qty: number; unitPrice: number; cancelled: false;   timestamp: string }
+      | { entryType: 'purchase'; po: PurchaseOrder; qty: number; unitPrice: number; cancelled: false;   timestamp: string };
     const raw: RawEntry[] = [];
 
     // Giao dịch bán hàng (xuất kho)
@@ -191,13 +195,21 @@ export default function Inventory({
       if (item) raw.push({ entryType: 'return', ro, qty: item.quantity, unitPrice: item.unitPrice, cancelled: false, timestamp: ro.timestamp });
     });
 
+    // Phiếu nhập/xuất hàng (purchase orders)
+    purchaseOrders.forEach(po => {
+      const item = po.items.find(it => it.productId === expandedId);
+      if (item) raw.push({ entryType: 'purchase', po, qty: item.quantity, unitPrice: item.unitCost, cancelled: false, timestamp: po.timestamp });
+    });
+
     // Sắp xếp mới nhất trước
     raw.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     // Đi ngược từ tồn kho hiện tại:
     // - Bán hàng (sale): tồn TĂNG khi đi ngược (running += qty)
     // - Trả hàng (return): tồn GIẢM khi đi ngược (running -= qty)
-    // - Hủy bán (cancelled): không ảnh hưởng running (tồn đã được hoàn phục)
+    // - Nhập hàng (purchase import): tồn GIẢM khi đi ngược (running -= qty)
+    // - Xuất hàng (purchase export): tồn TĂNG khi đi ngược (running += qty)
+    // - Hủy bán (cancelled): không ảnh hưởng running
     let running = ep.stock;
     const result: LedgerRow[] = raw.map(e => {
       if (e.entryType === 'sale') {
@@ -205,14 +217,20 @@ export default function Inventory({
         const tonCuoi = running;
         running += e.qty;
         return { ...e, tonCuoi };
-      } else {
+      } else if (e.entryType === 'return') {
         const tonCuoi = running;
         running -= e.qty;
+        return { ...e, tonCuoi };
+      } else {
+        // purchase: import tăng kho, export giảm kho — đi ngược thì ngược lại
+        const tonCuoi = running;
+        if (e.po.type === 'import') running -= e.qty;
+        else running += e.qty;
         return { ...e, tonCuoi };
       }
     });
     return result.reverse();
-  }, [invoices, returnOrders, expandedId, products]);
+  }, [invoices, returnOrders, purchaseOrders, expandedId, products]);
 
   function openLedgerInvoice(inv: Invoice) {
     setLedgerInvoice(inv); setLedgerMode('view'); setLedgerError('');
@@ -947,14 +965,19 @@ export default function Inventory({
                                       <tbody className="divide-y divide-zinc-800">
                                         {ledgerEntries.map(entry => {
                                           const isReturn = entry.entryType === 'return';
-                                          const docId = isReturn ? entry.ro.id : entry.inv.id;
+                                          const isPurchase = entry.entryType === 'purchase';
+                                          const docId = isReturn ? entry.ro.id : isPurchase ? entry.po.id : entry.inv.id;
                                           const ts = entry.timestamp;
                                           const { qty, unitPrice, tonCuoi, cancelled } = entry;
+                                          const isImport = isPurchase && entry.po.type === 'import';
+                                          const partnerName = isPurchase ? entry.po.partnerName : null;
                                           return (
                                             <tr key={`${entry.entryType}-${docId}`}
-                                              className={`transition ${cancelled ? 'opacity-40 bg-rose-950/10' : isReturn ? 'bg-teal-950/10 hover:bg-teal-900/20' : 'hover:bg-zinc-800/40'}`}>
+                                              className={`transition ${cancelled ? 'opacity-40 bg-rose-950/10' : isReturn ? 'bg-teal-950/10 hover:bg-teal-900/20' : isPurchase ? (isImport ? 'bg-blue-950/20 hover:bg-blue-900/20' : 'bg-amber-950/10 hover:bg-amber-900/10') : 'hover:bg-zinc-800/40'}`}>
                                               <td className="px-3 py-2.5">
-                                                {isReturn ? (
+                                                {isPurchase ? (
+                                                  <span className={`font-mono font-bold ${isImport ? 'text-blue-400' : 'text-amber-400'}`}>{entry.po.id}</span>
+                                                ) : isReturn ? (
                                                   <span className="font-mono font-bold text-teal-400">{entry.ro.id}</span>
                                                 ) : (
                                                   <button onClick={() => openLedgerInvoice(entry.inv)}
@@ -962,6 +985,7 @@ export default function Inventory({
                                                     {entry.inv.id}
                                                   </button>
                                                 )}
+                                                {isPurchase && <span className={`ml-1.5 text-[9px] font-bold border rounded px-1 py-0.5 ${isImport ? 'text-blue-400 border-blue-700/60 bg-blue-950/40' : 'text-amber-400 border-amber-700/60 bg-amber-950/40'}`}>{isImport ? 'NHẬP KHO' : 'XUẤT KHO'}</span>}
                                                 {isReturn && <span className="ml-1.5 text-[9px] text-teal-400 font-bold border border-teal-700/60 rounded px-1 py-0.5 bg-teal-950/40">TRẢ HÀNG</span>}
                                                 {cancelled && <span className="ml-1.5 text-[9px] text-rose-400 font-bold border border-rose-700/60 rounded px-1 py-0.5 bg-rose-950/40">ĐÃ HỦY</span>}
                                               </td>
@@ -969,19 +993,23 @@ export default function Inventory({
                                                 {new Date(ts).toLocaleDateString('vi-VN')} {new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                                               </td>
                                               <td className="px-3 py-2.5 text-zinc-300">
-                                                {isReturn
-                                                  ? <span className="text-teal-400/70 text-xs font-mono">← {entry.ro.invoiceId}</span>
-                                                  : (entry.inv.customerName || <span className="text-zinc-500 italic">Khách lẻ</span>)}
+                                                {isPurchase
+                                                  ? <span className="text-zinc-400">{partnerName || <span className="italic text-zinc-600">Không có NCC</span>}</span>
+                                                  : isReturn
+                                                    ? <span className="text-teal-400/70 text-xs font-mono">← {entry.ro.invoiceId}</span>
+                                                    : (entry.inv.customerName || <span className="text-zinc-500 italic">Khách lẻ</span>)}
                                               </td>
                                               <td className="px-3 py-2.5 text-center text-zinc-400 whitespace-nowrap">
-                                                {isReturn ? '—' : (PM_LABEL_INV[entry.inv.paymentMethod] ?? entry.inv.paymentMethod)}
+                                                {isPurchase ? '—' : isReturn ? '—' : (PM_LABEL_INV[entry.inv.paymentMethod] ?? entry.inv.paymentMethod)}
                                               </td>
-                                              <td className={`px-3 py-2.5 text-right font-mono ${cancelled ? 'text-zinc-600 line-through' : 'text-amber-400'}`}>{formatVND(unitPrice)}</td>
+                                              <td className={`px-3 py-2.5 text-right font-mono ${cancelled ? 'text-zinc-600 line-through' : isPurchase ? (isImport ? 'text-blue-400' : 'text-amber-400') : 'text-amber-400'}`}>{formatVND(unitPrice)}</td>
                                               <td className="px-3 py-2.5 text-right font-mono text-zinc-400">
-                                                {isReturn ? '—' : (entry.inv.discountPercent > 0 ? `${entry.inv.discountPercent}%` : entry.inv.discountAmount > 0 ? formatVND(entry.inv.discountAmount) : '—')}
+                                                {isPurchase || isReturn ? '—' : (entry.inv.discountPercent > 0 ? `${entry.inv.discountPercent}%` : entry.inv.discountAmount > 0 ? formatVND(entry.inv.discountAmount) : '—')}
                                               </td>
-                                              <td className={`px-3 py-2.5 text-right font-mono font-bold ${cancelled ? 'text-zinc-600 line-through' : isReturn ? 'text-teal-400' : 'text-rose-400'}`}>
-                                                {isReturn ? `+${qty}` : `−${qty}`}
+                                              <td className={`px-3 py-2.5 text-right font-mono font-bold ${cancelled ? 'text-zinc-600 line-through' : isPurchase ? (isImport ? 'text-blue-400' : 'text-rose-400') : isReturn ? 'text-teal-400' : 'text-rose-400'}`}>
+                                                {isPurchase
+                                                  ? (isImport ? `+${qty}` : `−${qty}`)
+                                                  : isReturn ? `+${qty}` : `−${qty}`}
                                               </td>
                                               <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">
                                                 {tonCuoi !== null ? tonCuoi : <span className="text-zinc-600">—</span>}

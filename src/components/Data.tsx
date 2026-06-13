@@ -3,7 +3,6 @@ import { Customer, Partner, PurchaseOrder, Invoice, Product, PaymentLog, ReturnO
 import {
   fetchCustomers, insertCustomer, updateCustomer, deleteCustomer,
   fetchPartners, insertPartner, updatePartner, deletePartner,
-  fetchPurchaseOrders, insertPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder,
   fetchPaymentLogs,
 } from '../lib/db';
 import Customers from './Customers';
@@ -16,6 +15,10 @@ interface DataProps {
   invoices: Invoice[];
   products: Product[];
   returnOrders: ReturnOrder[];
+  purchaseOrders: PurchaseOrder[];
+  onAddPurchaseOrder: (o: PurchaseOrder) => Promise<void>;
+  onUpdatePurchaseOrder: (o: PurchaseOrder) => Promise<void>;
+  onDeletePurchaseOrder: (id: string) => Promise<void>;
   onUpdateProductsStock: (updates: { id: string; delta: number }[]) => void;
   onUpdateInvoice?: (inv: Invoice) => Promise<void>;
   onAddReturnOrder?: (ro: ReturnOrder) => Promise<void>;
@@ -24,11 +27,10 @@ interface DataProps {
 
 type SubTab = 'customers' | 'partners' | 'orders' | 'invoices';
 
-export default function Data({ invoices, products, returnOrders, onUpdateProductsStock, onUpdateInvoice, onAddReturnOrder, onPrintInvoice }: DataProps) {
+export default function Data({ invoices, products, returnOrders, purchaseOrders, onAddPurchaseOrder, onUpdatePurchaseOrder, onDeletePurchaseOrder, onUpdateProductsStock, onUpdateInvoice, onAddReturnOrder, onPrintInvoice }: DataProps) {
   const [subTab, setSubTab] = useState<SubTab>('customers');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
-  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [paymentLogs, setPaymentLogs] = useState<PaymentLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -38,10 +40,9 @@ export default function Data({ invoices, products, returnOrders, onUpdateProduct
       setLoading(true);
       setError('');
       try {
-        const [c, p, o, logs] = await Promise.all([fetchCustomers(), fetchPartners(), fetchPurchaseOrders(), fetchPaymentLogs().catch(() => [] as PaymentLog[])]);
+        const [c, p, logs] = await Promise.all([fetchCustomers(), fetchPartners(), fetchPaymentLogs().catch(() => [] as PaymentLog[])]);
         setCustomers(c);
         setPartners(p);
-        setOrders(o);
         setPaymentLogs(logs);
       } catch (err: any) {
         setError('Không thể tải dữ liệu. Hãy chạy lại supabase_setup.sql trên Supabase SQL Editor.');
@@ -79,20 +80,6 @@ export default function Data({ invoices, products, returnOrders, onUpdateProduct
   async function handleDeletePartner(id: string) {
     await deletePartner(id);
     setPartners(prev => prev.filter(x => x.id !== id));
-  }
-
-  // Order handlers
-  async function handleAddOrder(o: PurchaseOrder) {
-    await insertPurchaseOrder(o);
-    setOrders(prev => [o, ...prev]);
-  }
-  async function handleUpdateOrder(o: PurchaseOrder) {
-    await updatePurchaseOrder(o);
-    setOrders(prev => prev.map(x => x.id === o.id ? o : x));
-  }
-  async function handleDeleteOrder(id: string) {
-    await deletePurchaseOrder(id);
-    setOrders(prev => prev.filter(x => x.id !== id));
   }
 
   const tabs: { id: SubTab; label: string; icon: React.ReactNode }[] = [
@@ -139,14 +126,14 @@ export default function Data({ invoices, products, returnOrders, onUpdateProduct
               onAdd={handleAddCustomer} onUpdate={handleUpdateCustomer} onDelete={handleDeleteCustomer} />
           )}
           {subTab === 'partners' && (
-            <Partners partners={partners} purchaseOrders={orders}
+            <Partners partners={partners} purchaseOrders={purchaseOrders}
               onAdd={handleAddPartner} onUpdate={handleUpdatePartner} onDelete={handleDeletePartner}
-              onUpdateOrder={handleUpdateOrder}
+              onUpdateOrder={onUpdatePurchaseOrder}
               onPaymentLogAdded={log => setPaymentLogs(prev => [log, ...prev])} />
           )}
           {subTab === 'orders' && (
-            <PurchaseOrders products={products} partners={partners} orders={orders}
-              onAdd={handleAddOrder} onUpdate={handleUpdateOrder} onDelete={handleDeleteOrder}
+            <PurchaseOrders products={products} partners={partners} orders={purchaseOrders}
+              onAdd={onAddPurchaseOrder} onUpdate={onUpdatePurchaseOrder} onDelete={onDeletePurchaseOrder}
               onUpdateProductsStock={onUpdateProductsStock}
               paymentLogs={paymentLogs}
               onPaymentLogAdded={log => setPaymentLogs(prev => [log, ...prev])} />

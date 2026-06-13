@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Product, StoreConfig, Invoice, StaffUser, ReturnOrder } from './types';
+import { Product, StoreConfig, Invoice, StaffUser, ReturnOrder, PurchaseOrder } from './types';
 import { INITIAL_PRODUCTS, INITIAL_STORE_CONFIG } from './data';
 import {
   fetchProducts, insertProduct, updateProduct as dbUpdateProduct,
@@ -12,6 +12,7 @@ import {
   fetchInvoices, insertInvoice, updateInvoice as dbUpdateInvoice,
   fetchStoreConfig, saveStoreConfig,
   fetchReturnOrders, insertReturnOrder,
+  fetchPurchaseOrders, insertPurchaseOrder, updatePurchaseOrder as dbUpdatePurchaseOrder, deletePurchaseOrder,
 } from './lib/db';
 import { getCurrentUser, logout } from './lib/auth';
 import Checkout from './components/Checkout';
@@ -35,6 +36,7 @@ export default function App() {
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(INITIAL_STORE_CONFIG);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [returnOrders, setReturnOrders] = useState<ReturnOrder[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [activeTab, setActiveTab] = useState<'checkout' | 'inventory' | 'data' | 'reports' | 'settings'>('checkout');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedReprintInvoice, setSelectedReprintInvoice] = useState<Invoice | null>(null);
@@ -62,11 +64,12 @@ export default function App() {
       }
 
       try {
-        const [dbProducts, dbConfig, dbInvoices, dbReturnOrders] = await Promise.all([
+        const [dbProducts, dbConfig, dbInvoices, dbReturnOrders, dbPurchaseOrders] = await Promise.all([
           fetchProducts(),
           fetchStoreConfig(),
           fetchInvoices(),
           fetchReturnOrders(),
+          fetchPurchaseOrders().catch(() => [] as PurchaseOrder[]),
         ]);
 
         if (dbProducts.length === 0) {
@@ -86,6 +89,7 @@ export default function App() {
 
         setInvoices(dbInvoices);
         setReturnOrders(dbReturnOrders);
+        setPurchaseOrders(dbPurchaseOrders);
       } catch (err: any) {
         console.error('Supabase error:', err);
         setLoadError('Không thể kết nối database. Kiểm tra lại biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY.');
@@ -117,6 +121,7 @@ export default function App() {
     setProducts([]);
     setInvoices([]);
     setReturnOrders([]);
+    setPurchaseOrders([]);
     setIsLoading(true);
     setLoadError('');
   };
@@ -212,6 +217,19 @@ export default function App() {
       const u = updates.find(x => x.id === p.id);
       return u ? { ...p, stock: p.stock + u.delta } : p;
     }));
+  };
+
+  const handleAddPurchaseOrder = async (o: PurchaseOrder) => {
+    await insertPurchaseOrder(o);
+    setPurchaseOrders(prev => [o, ...prev]);
+  };
+  const handleUpdatePurchaseOrder = async (o: PurchaseOrder) => {
+    await dbUpdatePurchaseOrder(o);
+    setPurchaseOrders(prev => prev.map(x => x.id === o.id ? o : x));
+  };
+  const handleDeletePurchaseOrder = async (id: string) => {
+    await deletePurchaseOrder(id);
+    setPurchaseOrders(prev => prev.filter(x => x.id !== id));
   };
 
   const lowStockCount = products.filter(p => p.stock <= p.minStock).length;
@@ -399,6 +417,7 @@ export default function App() {
                 onRestockProduct={handleRestockProduct}
                 invoices={invoices}
                 returnOrders={returnOrders}
+                purchaseOrders={purchaseOrders}
                 onUpdateInvoice={handleUpdateInvoice}
                 onPrintInvoice={setSelectedReprintInvoice}
                 onUpdateProductsStock={handleUpdateProductsStock}
@@ -409,6 +428,10 @@ export default function App() {
                 invoices={invoices}
                 products={products}
                 returnOrders={returnOrders}
+                purchaseOrders={purchaseOrders}
+                onAddPurchaseOrder={handleAddPurchaseOrder}
+                onUpdatePurchaseOrder={handleUpdatePurchaseOrder}
+                onDeletePurchaseOrder={handleDeletePurchaseOrder}
                 onUpdateProductsStock={handleUpdateProductsStock}
                 onUpdateInvoice={handleUpdateInvoice}
                 onAddReturnOrder={handleAddReturnOrder}

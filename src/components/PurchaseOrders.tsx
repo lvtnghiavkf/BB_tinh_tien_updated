@@ -293,9 +293,10 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     setSaving(true);
     try {
       await onAdd(order);
-      if (draftType === 'import') {
-        onUpdateProductsStock(validItems.map(it => ({ id: it.productId, delta: it.quantity })));
-      }
+      onUpdateProductsStock(validItems.map(it => ({
+        id: it.productId,
+        delta: draftType === 'import' ? it.quantity : -it.quantity,
+      })));
       if (paidAtCreation > 0 && onPaymentLogAdded) {
         const log: PaymentLog = {
           id: `PL${Date.now()}`,
