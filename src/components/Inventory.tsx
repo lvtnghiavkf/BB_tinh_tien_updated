@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Product, Invoice, ReturnOrder, PurchaseOrder } from '../types';
 import { uploadProductImage } from '../lib/db';
@@ -85,6 +85,9 @@ export default function Inventory({
 
   // Thẻ kho
   const [expandedTab, setExpandedTab] = useState<'info' | 'ledger'>('info');
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [viewingPO, setViewingPO] = useState<PurchaseOrder | null>(null);
+  const [viewingRO, setViewingRO] = useState<ReturnOrder | null>(null);
   const [ledgerInvoice, setLedgerInvoice] = useState<Invoice | null>(null);
   const [ledgerMode, setLedgerMode] = useState<'view' | 'edit' | 'confirming-cancel'>('view');
   const [ledgerSaving, setLedgerSaving] = useState(false);
@@ -229,8 +232,12 @@ export default function Inventory({
         return { ...e, tonCuoi };
       }
     });
-    return result.reverse();
+    return result;
   }, [invoices, returnOrders, purchaseOrders, expandedId, products]);
+
+  const LEDGER_PAGE_SIZE = 10;
+  const ledgerTotalPages = Math.max(1, Math.ceil(ledgerEntries.length / LEDGER_PAGE_SIZE));
+  const ledgerPagedEntries = ledgerEntries.slice((ledgerPage - 1) * LEDGER_PAGE_SIZE, ledgerPage * LEDGER_PAGE_SIZE);
 
   function openLedgerInvoice(inv: Invoice) {
     setLedgerInvoice(inv); setLedgerMode('view'); setLedgerError('');
@@ -785,7 +792,7 @@ export default function Inventory({
                     <React.Fragment key={p.id}>
                       <tr
                         className={`transition text-sm cursor-pointer ${isSelected ? 'bg-blue-900/20' : isExpanded ? 'bg-amber-950/30' : 'hover:bg-zinc-800/40'} ${p.hidden ? 'opacity-55' : ''}`}
-                        onClick={() => { if (isExpanded) { setExpandedId(null); } else { setExpandedId(p.id); setExpandedTab('info'); } }}
+                        onClick={() => { if (isExpanded) { setExpandedId(null); } else { setExpandedId(p.id); setExpandedTab('info'); setLedgerPage(1); } }}
                       >
                         <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(p.id)}
@@ -963,7 +970,7 @@ export default function Inventory({
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-zinc-800">
-                                        {ledgerEntries.map(entry => {
+                                        {ledgerPagedEntries.map(entry => {
                                           const isReturn = entry.entryType === 'return';
                                           const isPurchase = entry.entryType === 'purchase';
                                           const docId = isReturn ? entry.ro.id : isPurchase ? entry.po.id : entry.inv.id;
@@ -976,9 +983,9 @@ export default function Inventory({
                                               className={`transition ${cancelled ? 'opacity-40 bg-rose-950/10' : isReturn ? 'bg-teal-950/10 hover:bg-teal-900/20' : isPurchase ? (isImport ? 'bg-blue-950/20 hover:bg-blue-900/20' : 'bg-amber-950/10 hover:bg-amber-900/10') : 'hover:bg-zinc-800/40'}`}>
                                               <td className="px-3 py-2.5">
                                                 {isPurchase ? (
-                                                  <span className={`font-mono font-bold ${isImport ? 'text-blue-400' : 'text-amber-400'}`}>{entry.po.id}</span>
+                                                  <button onClick={() => setViewingPO(entry.po)} className={`font-mono font-bold hover:underline cursor-pointer ${isImport ? 'text-blue-400 hover:text-blue-300' : 'text-amber-400 hover:text-amber-300'}`}>{entry.po.id}</button>
                                                 ) : isReturn ? (
-                                                  <span className="font-mono font-bold text-teal-400">{entry.ro.id}</span>
+                                                  <button onClick={() => setViewingRO(entry.ro)} className="font-mono font-bold text-teal-400 hover:text-teal-300 hover:underline cursor-pointer">{entry.ro.id}</button>
                                                 ) : (
                                                   <button onClick={() => openLedgerInvoice(entry.inv)}
                                                     className={`font-mono font-bold hover:underline cursor-pointer ${cancelled ? 'text-rose-400 line-through' : 'text-amber-400 hover:text-amber-300'}`}>
@@ -1021,6 +1028,38 @@ export default function Inventory({
                                     </table>
                                   </div>
                                 )}
+                                {ledgerTotalPages > 1 && (
+                                  <div className="flex items-center justify-center gap-1 mt-3 text-xs text-zinc-400 flex-wrap">
+                                    <button onClick={() => setLedgerPage(1)} disabled={ledgerPage === 1}
+                                      className="px-2 py-1 rounded hover:bg-zinc-700 disabled:opacity-30 cursor-pointer disabled:cursor-default font-mono font-bold">⟨⟨</button>
+                                    <button onClick={() => setLedgerPage(p => Math.max(1, p - 1))} disabled={ledgerPage === 1}
+                                      className="px-2 py-1 rounded hover:bg-zinc-700 disabled:opacity-30 cursor-pointer disabled:cursor-default font-mono font-bold">⟨</button>
+                                    {(() => {
+                                      const pages: number[] = [];
+                                      const half = 2;
+                                      let start = Math.max(1, ledgerPage - half);
+                                      let end = Math.min(ledgerTotalPages, start + 4);
+                                      start = Math.max(1, end - 4);
+                                      for (let i = start; i <= end; i++) pages.push(i);
+                                      return pages.map(pg => (
+                                        <button key={pg} onClick={() => setLedgerPage(pg)}
+                                          className={`px-2.5 py-1 rounded font-mono cursor-pointer ${ledgerPage === pg ? 'bg-zinc-600 text-zinc-100 font-bold' : 'hover:bg-zinc-700'}`}>
+                                          {pg}
+                                        </button>
+                                      ));
+                                    })()}
+                                    {ledgerTotalPages > 5 && (
+                                      <input type="number" min={1} max={ledgerTotalPages} value={ledgerPage}
+                                        onChange={e => { const v = Number(e.target.value); if (v >= 1 && v <= ledgerTotalPages) setLedgerPage(v); }}
+                                        className="w-12 px-1 py-0.5 border border-zinc-600 rounded bg-zinc-800 text-center text-xs text-zinc-100 focus:outline-none focus:border-blue-500" />
+                                    )}
+                                    <button onClick={() => setLedgerPage(p => Math.min(ledgerTotalPages, p + 1))} disabled={ledgerPage === ledgerTotalPages}
+                                      className="px-2 py-1 rounded hover:bg-zinc-700 disabled:opacity-30 cursor-pointer disabled:cursor-default font-mono font-bold">⟩</button>
+                                    <button onClick={() => setLedgerPage(ledgerTotalPages)} disabled={ledgerPage === ledgerTotalPages}
+                                      className="px-2 py-1 rounded hover:bg-zinc-700 disabled:opacity-30 cursor-pointer disabled:cursor-default font-mono font-bold">⟩⟩</button>
+                                    <span className="text-zinc-500 ml-1">{ledgerPage}/{ledgerTotalPages} trang · {ledgerEntries.length} giao dịch</span>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </td>
@@ -1034,6 +1073,108 @@ export default function Inventory({
           )}
         </div>
       </div>
+
+      {/* PO Detail Modal */}
+      <AnimatePresence>
+        {viewingPO && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60] overflow-y-auto">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-3xl my-4">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700">
+                <div>
+                  <p className="font-bold text-zinc-100 font-mono">{viewingPO.id}</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {viewingPO.type === 'import' ? 'Nhập kho' : 'Xuất kho'} · {new Date(viewingPO.timestamp).toLocaleString('vi-VN')}
+                    {viewingPO.partnerName && ` · ${viewingPO.partnerName}`}
+                  </p>
+                </div>
+                <button onClick={() => setViewingPO(null)} className="text-zinc-400 hover:text-zinc-100 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="p-5 overflow-x-auto">
+                <table className="w-full text-xs min-w-[400px]">
+                  <thead>
+                    <tr className="text-zinc-500 font-bold uppercase tracking-wider border-b border-zinc-700">
+                      <th className="pb-2 text-left">Tên hàng</th>
+                      <th className="pb-2 text-left">Mã SKU</th>
+                      <th className="pb-2 text-right">Số lượng</th>
+                      <th className="pb-2 text-right">Đơn giá</th>
+                      <th className="pb-2 text-right">Thành tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800">
+                    {viewingPO.items.map((it, i) => (
+                      <tr key={i} className="text-zinc-300">
+                        <td className="py-2 pr-3">{it.productName}</td>
+                        <td className="py-2 pr-3 font-mono text-zinc-500">{it.sku}</td>
+                        <td className="py-2 text-right font-bold">{it.quantity}</td>
+                        <td className="py-2 text-right font-mono">{it.unitCost.toLocaleString('vi-VN')} ₫</td>
+                        <td className="py-2 text-right font-mono font-bold text-blue-400">{(it.quantity * it.unitCost).toLocaleString('vi-VN')} ₫</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-zinc-700 font-bold text-zinc-100">
+                      <td colSpan={4} className="pt-2 text-right text-xs text-zinc-400">Tổng cộng:</td>
+                      <td className="pt-2 text-right font-mono text-blue-400">{viewingPO.totalAmount.toLocaleString('vi-VN')} ₫</td>
+                    </tr>
+                  </tfoot>
+                </table>
+                {viewingPO.notes && <p className="text-xs text-zinc-500 mt-3 italic">{viewingPO.notes}</p>}
+              </div>
+              <div className="px-5 py-4 border-t border-zinc-700 flex justify-end">
+                <button onClick={() => setViewingPO(null)} className="px-4 py-2 border border-zinc-600 text-zinc-300 hover:bg-zinc-800 rounded-lg text-sm font-bold cursor-pointer">Đóng</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* RO Detail Modal */}
+      <AnimatePresence>
+        {viewingRO && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60] overflow-y-auto">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-2xl my-4">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700">
+                <div>
+                  <p className="font-bold text-teal-400 font-mono">{viewingRO.id}</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Phiếu trả hàng · {new Date(viewingRO.timestamp).toLocaleString('vi-VN')}
+                    {viewingRO.invoiceId && ` · Hóa đơn gốc: ${viewingRO.invoiceId}`}
+                  </p>
+                </div>
+                <button onClick={() => setViewingRO(null)} className="text-zinc-400 hover:text-zinc-100 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="p-5 overflow-x-auto">
+                <table className="w-full text-xs min-w-[360px]">
+                  <thead>
+                    <tr className="text-zinc-500 font-bold uppercase tracking-wider border-b border-zinc-700">
+                      <th className="pb-2 text-left">Tên hàng</th>
+                      <th className="pb-2 text-right">Số lượng</th>
+                      <th className="pb-2 text-right">Đơn giá</th>
+                      <th className="pb-2 text-right">Thành tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800">
+                    {viewingRO.items.map((it, i) => (
+                      <tr key={i} className="text-zinc-300">
+                        <td className="py-2 pr-3">{products.find(p => p.id === it.productId)?.name ?? it.productId}</td>
+                        <td className="py-2 text-right font-bold text-teal-400">+{it.quantity}</td>
+                        <td className="py-2 text-right font-mono">{it.unitPrice.toLocaleString('vi-VN')} ₫</td>
+                        <td className="py-2 text-right font-mono font-bold text-teal-400">{(it.quantity * it.unitPrice).toLocaleString('vi-VN')} ₫</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {viewingRO.reason && <p className="text-xs text-zinc-500 mt-3 italic">Lý do: {viewingRO.reason}</p>}
+              </div>
+              <div className="px-5 py-4 border-t border-zinc-700 flex justify-end">
+                <button onClick={() => setViewingRO(null)} className="px-4 py-2 border border-zinc-600 text-zinc-300 hover:bg-zinc-800 rounded-lg text-sm font-bold cursor-pointer">Đóng</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* datalist for brand autocomplete */}
       <datalist id="inv-brand-list">
