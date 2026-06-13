@@ -183,7 +183,7 @@ export default function Checkout({
     if (cart.length === 0) return;
 
     const randomSuffix = Math.floor(10000 + Math.random() * 90000);
-    const invoiceId = `HD-${randomSuffix}`;
+    const invoiceId = `HD${randomSuffix}`;
 
     const newInvoice: Invoice = {
       id: invoiceId,

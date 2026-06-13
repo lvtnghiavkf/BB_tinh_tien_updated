@@ -235,3 +235,40 @@ alter table public.invoices add column if not exists notes          text;
 alter table public.invoices add column if not exists status         text not null default 'completed';
 alter table public.invoices add column if not exists payment_status text not null default 'paid';
 alter table public.invoices add column if not exists is_adjusted    boolean not null default false;
+
+-- ── Cột mở rộng cho products ──────────────────────────────────
+alter table public.products add column if not exists image_url text;
+
+-- Storage bucket hình ảnh sản phẩm
+insert into storage.buckets (id, name, public)
+  values ('product-images', 'product-images', true)
+  on conflict (id) do nothing;
+
+-- ── Bảng 11: Phiếu trả hàng (THxxxxx) ────────────────────────
+create table if not exists public.return_orders (
+  id            text primary key,               -- THxxxxx
+  invoice_id    text not null references public.invoices(id) on delete restrict,
+  timestamp     timestamptz not null default now(),
+  total_refund  bigint not null default 0,
+  notes         text,
+  created_at    timestamptz not null default now()
+);
+
+-- ── Bảng 12: Chi tiết từng dòng phiếu trả hàng ───────────────
+create table if not exists public.return_order_items (
+  id               bigserial primary key,
+  return_order_id  text not null references public.return_orders(id) on delete cascade,
+  product_id       text,
+  product_name     text not null,
+  sku              text,
+  quantity         numeric(10,3) not null default 1,
+  unit_price       bigint not null default 0
+);
+
+create index if not exists idx_roi_return_order_id on public.return_order_items(return_order_id);
+
+alter table public.return_orders      enable row level security;
+alter table public.return_order_items enable row level security;
+
+create policy "public_all_return_orders"      on public.return_orders      for all using (true) with check (true);
+create policy "public_all_return_order_items" on public.return_order_items for all using (true) with check (true);

@@ -4,13 +4,14 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Product, StoreConfig, Invoice, StaffUser } from './types';
+import { Product, StoreConfig, Invoice, StaffUser, ReturnOrder } from './types';
 import { INITIAL_PRODUCTS, INITIAL_STORE_CONFIG } from './data';
 import {
   fetchProducts, insertProduct, updateProduct as dbUpdateProduct,
   deleteProduct as dbDeleteProduct,
   fetchInvoices, insertInvoice, updateInvoice as dbUpdateInvoice,
   fetchStoreConfig, saveStoreConfig,
+  fetchReturnOrders, insertReturnOrder,
 } from './lib/db';
 import { getCurrentUser, logout } from './lib/auth';
 import Checkout from './components/Checkout';
@@ -33,6 +34,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(INITIAL_STORE_CONFIG);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [returnOrders, setReturnOrders] = useState<ReturnOrder[]>([]);
   const [activeTab, setActiveTab] = useState<'checkout' | 'inventory' | 'data' | 'reports' | 'settings'>('checkout');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedReprintInvoice, setSelectedReprintInvoice] = useState<Invoice | null>(null);
@@ -60,10 +62,11 @@ export default function App() {
       }
 
       try {
-        const [dbProducts, dbConfig, dbInvoices] = await Promise.all([
+        const [dbProducts, dbConfig, dbInvoices, dbReturnOrders] = await Promise.all([
           fetchProducts(),
           fetchStoreConfig(),
           fetchInvoices(),
+          fetchReturnOrders(),
         ]);
 
         if (dbProducts.length === 0) {
@@ -82,6 +85,7 @@ export default function App() {
         }
 
         setInvoices(dbInvoices);
+        setReturnOrders(dbReturnOrders);
       } catch (err: any) {
         console.error('Supabase error:', err);
         setLoadError('Không thể kết nối database. Kiểm tra lại biến môi trường VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY.');
@@ -112,6 +116,7 @@ export default function App() {
     setCurrentUser(null);
     setProducts([]);
     setInvoices([]);
+    setReturnOrders([]);
     setIsLoading(true);
     setLoadError('');
   };
@@ -175,6 +180,20 @@ export default function App() {
     }
     await dbUpdateInvoice(inv);
     setInvoices(prev => prev.map(x => x.id === inv.id ? inv : x));
+  };
+
+  const handleAddReturnOrder = async (ro: ReturnOrder) => {
+    // Tăng tồn kho cho các sản phẩm được trả
+    for (const item of ro.items) {
+      const product = products.find(p => p.id === item.productId);
+      if (product) await dbUpdateProduct({ ...product, stock: product.stock + item.quantity });
+    }
+    await insertReturnOrder(ro);
+    setProducts(prev => prev.map(p => {
+      const ret = ro.items.find(it => it.productId === p.id);
+      return ret ? { ...p, stock: p.stock + ret.quantity } : p;
+    }));
+    setReturnOrders(prev => [...prev, ro]);
   };
 
   const handleSaveConfig = async (updatedConfig: StoreConfig) => {
@@ -379,6 +398,7 @@ export default function App() {
                 onDeleteProduct={handleDeleteProduct}
                 onRestockProduct={handleRestockProduct}
                 invoices={invoices}
+                returnOrders={returnOrders}
                 onUpdateInvoice={handleUpdateInvoice}
                 onPrintInvoice={setSelectedReprintInvoice}
                 onUpdateProductsStock={handleUpdateProductsStock}
@@ -388,8 +408,10 @@ export default function App() {
               <Data
                 invoices={invoices}
                 products={products}
+                returnOrders={returnOrders}
                 onUpdateProductsStock={handleUpdateProductsStock}
                 onUpdateInvoice={handleUpdateInvoice}
+                onAddReturnOrder={handleAddReturnOrder}
                 onPrintInvoice={setSelectedReprintInvoice}
               />
             )}

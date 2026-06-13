@@ -155,3 +155,20 @@ export interface Expense {
   date: string;      // YYYY-MM-DD
   createdAt: string;
 }
+
+export interface ReturnItem {
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface ReturnOrder {
+  id: string;           // TH00001 format
+  invoiceId: string;    // ID của hóa đơn gốc
+  timestamp: string;    // ISO string — thời điểm trả hàng
+  items: ReturnItem[];
+  totalRefund: number;  // Tổng tiền hoàn trả (dương)
+  notes?: string;
+}

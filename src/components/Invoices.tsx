@@ -1,18 +1,20 @@
 import React, { useState, useMemo } from 'react';
-import { Invoice, Product } from '../types';
+import { Invoice, Product, ReturnOrder, ReturnItem } from '../types';
 import {
-  Search, FileText, X, Printer, Ban,
+  Search, FileText, X, Printer,
   ChevronDown, CreditCard, Banknote, QrCode,
   CheckCircle2, AlertTriangle, Pencil, Check,
-  Receipt, ReceiptX, FilePenLine,
+  Receipt, ReceiptX, FilePenLine, RotateCcw, Minus, Plus,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 interface InvoicesProps {
   invoices: Invoice[];
   products: Product[];
+  returnOrders: ReturnOrder[];
   onUpdateInvoice: (inv: Invoice) => Promise<void>;
   onPrintInvoice: (inv: Invoice) => void;
+  onAddReturnOrder: (ro: ReturnOrder) => Promise<void>;
   onUpdateProductsStock?: (updates: { id: string; delta: number }[]) => Promise<void> | void;
 }
 
@@ -27,7 +29,7 @@ const PM_COLOR: Record<string, string> = {
 type EditItem = { productId: string; name: string; sku: string; price: number; cost: number; qty: number };
 
 export default function Invoices({
-  invoices, products, onUpdateInvoice, onPrintInvoice, onUpdateProductsStock,
+  invoices, products, returnOrders, onUpdateInvoice, onPrintInvoice, onAddReturnOrder, onUpdateProductsStock,
 }: InvoicesProps) {
   const [search, setSearch] = useState('');
   const [pmFilter, setPmFilter] = useState('');
@@ -39,9 +41,12 @@ export default function Invoices({
   const [noteVal, setNoteVal] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
 
-  // Cancel confirm
-  const [cancelId, setCancelId] = useState<string | null>(null);
-  const [cancelling, setCancelling] = useState(false);
+  // Return order modal
+  const [returnInv, setReturnInv] = useState<Invoice | null>(null);
+  const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
+  const [returnNote, setReturnNote] = useState('');
+  const [returnSaving, setReturnSaving] = useState(false);
+  const [returnError, setReturnError] = useState('');
 
   // Inline error
   const [rowError, setRowError] = useState('');
@@ -91,15 +96,19 @@ export default function Invoices({
   const rangeList = useMemo(() => sorted.filter(inRange), [sorted, dateFrom, dateTo]);
 
   const stats = useMemo(() => {
-    const all     = rangeList.filter(i => (i.status ?? 'completed') !== 'cancelled');
-    const cancelled = rangeList.filter(i => i.status === 'cancelled');
-    const adjusted  = rangeList.filter(i => i.isAdjusted);
+    const all      = rangeList.filter(i => (i.status ?? 'completed') !== 'cancelled');
+    const adjusted = rangeList.filter(i => i.isAdjusted);
+    const returnsInRange = returnOrders.filter(ro => {
+      if (!dateFrom) return true;
+      const t = new Date(ro.timestamp).getTime();
+      return t >= dateFrom.getTime() && t <= (dateTo ?? new Date()).getTime();
+    });
     return {
-      all:       { count: all.length,       amount: all.reduce((s, i) => s + i.finalAmount, 0) },
-      cancelled: { count: cancelled.length, amount: cancelled.reduce((s, i) => s + i.finalAmount, 0) },
-      adjusted:  { count: adjusted.length,  amount: adjusted.reduce((s, i) => s + i.finalAmount, 0) },
+      all:     { count: all.length,              amount: all.reduce((s, i) => s + i.finalAmount, 0) },
+      returns: { count: returnsInRange.length,   amount: returnsInRange.reduce((s, ro) => s + ro.totalRefund, 0) },
+      adjusted:{ count: adjusted.length,         amount: adjusted.reduce((s, i) => s + i.finalAmount, 0) },
     };
-  }, [rangeList]);
+  }, [rangeList, returnOrders, dateFrom, dateTo]);
 
   const filtered = useMemo(() => {
     let list = rangeList;
@@ -131,15 +140,60 @@ export default function Invoices({
     }
   }
 
-  async function doCancelInvoice(inv: Invoice) {
-    setCancelling(true); setRowError('');
+  function openReturn(inv: Invoice) {
+    const qtys: Record<string, number> = {};
+    inv.items.forEach(it => { qtys[it.product.id] = 0; });
+    setReturnQtys(qtys);
+    setReturnNote('');
+    setReturnError('');
+    setReturnInv(inv);
+  }
+
+  function getAlreadyReturned(inv: Invoice, productId: string): number {
+    return returnOrders
+      .filter(ro => ro.invoiceId === inv.id)
+      .reduce((s, ro) => {
+        const item = ro.items.find(i => i.productId === productId);
+        return s + (item?.quantity ?? 0);
+      }, 0);
+  }
+
+  async function doReturn() {
+    if (!returnInv) return;
+    const items: ReturnItem[] = returnInv.items
+      .map(it => ({
+        productId: it.product.id,
+        productName: it.product.name,
+        sku: it.product.sku,
+        quantity: returnQtys[it.product.id] ?? 0,
+        unitPrice: it.product.sellingPrice,
+      }))
+      .filter(it => it.quantity > 0);
+
+    if (items.length === 0) {
+      setReturnError('Vui lòng chọn ít nhất 1 sản phẩm để trả hàng');
+      return;
+    }
+
+    const totalRefund = items.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
+    const randomSuffix = Math.floor(10000 + Math.random() * 90000);
+    const ro: ReturnOrder = {
+      id: `TH${randomSuffix}`,
+      invoiceId: returnInv.id,
+      timestamp: new Date().toISOString(),
+      items,
+      totalRefund,
+      notes: returnNote.trim() || undefined,
+    };
+
+    setReturnSaving(true); setReturnError('');
     try {
-      await onUpdateInvoice({ ...inv, status: 'cancelled' as const });
-      setCancelId(null);
+      await onAddReturnOrder(ro);
+      setReturnInv(null);
     } catch (e: any) {
-      setRowError(e?.message ?? 'Lỗi hủy hóa đơn');
+      setReturnError(e?.message ?? 'Lỗi tạo phiếu trả hàng');
     } finally {
-      setCancelling(false);
+      setReturnSaving(false);
     }
   }
 
@@ -223,7 +277,7 @@ export default function Invoices({
     ? (v / 1_000_000).toFixed(1).replace(/\.0$/, '') + ' tr'
     : v >= 1_000 ? (v / 1_000).toFixed(0) + ' k' : String(v);
 
-  const activeCard = showAdjustedOnly ? 'adjusted' : statusFilter === 'cancelled' ? 'cancelled' : 'all';
+  const activeCard = showAdjustedOnly ? 'adjusted' : 'all';
 
   return (
     <div className="space-y-4">
@@ -240,16 +294,15 @@ export default function Invoices({
           <p className="text-xs text-zinc-500 font-mono mt-0.5">{fmtShort(stats.all.amount)} ₫</p>
         </button>
 
-        {/* Hóa đơn hủy */}
-        <button type="button" onClick={() => { setStatusFilter('cancelled'); setShowAdjustedOnly(false); }}
-          className={`text-left p-4 rounded-xl border transition cursor-pointer ${activeCard === 'cancelled' ? 'border-rose-500 bg-rose-900/20' : 'border-zinc-700 bg-zinc-900 hover:border-zinc-500'}`}>
+        {/* Phiếu trả hàng */}
+        <div className="text-left p-4 rounded-xl border border-zinc-700 bg-zinc-900">
           <div className="flex items-center gap-2 mb-2">
-            <ReceiptX className={`w-4 h-4 ${activeCard === 'cancelled' ? 'text-rose-400' : 'text-zinc-500'}`} />
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Hóa đơn hủy</span>
+            <RotateCcw className="w-4 h-4 text-teal-400" />
+            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Phiếu trả hàng</span>
           </div>
-          <p className={`text-2xl font-extrabold font-mono ${activeCard === 'cancelled' ? 'text-rose-300' : 'text-zinc-100'}`}>{stats.cancelled.count}</p>
-          <p className="text-xs text-zinc-500 font-mono mt-0.5">{fmtShort(stats.cancelled.amount)} ₫</p>
-        </button>
+          <p className="text-2xl font-extrabold font-mono text-teal-300">{stats.returns.count}</p>
+          <p className="text-xs text-zinc-500 font-mono mt-0.5">{fmtShort(stats.returns.amount)} ₫</p>
+        </div>
 
         {/* Hóa đơn điều chỉnh */}
         <button type="button" onClick={() => { setStatusFilter(''); setShowAdjustedOnly(true); }}
@@ -336,7 +389,7 @@ export default function Invoices({
                       <tr
                         onClick={() => {
                           setExpandedId(isOpen ? null : inv.id);
-                          setRowError(''); setCancelId(null); setNoteEditId(null);
+                          setRowError(''); setNoteEditId(null);
                         }}
                         className={`border-b border-zinc-800 cursor-pointer transition-colors
                           ${isOpen ? 'bg-amber-950/20' : 'hover:bg-zinc-800/60'}
@@ -484,25 +537,6 @@ export default function Invoices({
                                 </button>
                               ) : null}
 
-                              {/* Cancel confirm */}
-                              {cancelId === inv.id && (
-                                <div className="bg-rose-950/40 border border-rose-800 rounded-xl p-4 space-y-2">
-                                  <div className="flex items-center gap-2 text-rose-400">
-                                    <AlertTriangle className="w-4 h-4" />
-                                    <p className="text-sm font-bold">Xác nhận hủy hóa đơn {inv.id}?</p>
-                                  </div>
-                                  <p className="text-xs text-rose-400/70">Tồn kho sẽ không tự động được phục hồi sau khi hủy.</p>
-                                  {rowError && <p className="text-xs text-rose-300 font-bold">{rowError}</p>}
-                                  <div className="flex gap-2">
-                                    <button onClick={() => setCancelId(null)}
-                                      className="px-3 py-1.5 border border-rose-700 text-rose-400 hover:bg-rose-900/30 rounded-lg text-xs font-bold cursor-pointer">Không</button>
-                                    <button onClick={() => doCancelInvoice(inv)} disabled={cancelling}
-                                      className="px-3 py-1.5 bg-rose-700 hover:bg-rose-600 disabled:opacity-60 text-white rounded-lg text-xs font-bold cursor-pointer">
-                                      {cancelling ? 'Đang hủy...' : 'Xác nhận hủy'}
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
 
                               {/* Actions */}
                               <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-800">
@@ -512,9 +546,9 @@ export default function Invoices({
                                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-black text-xs font-bold rounded-lg cursor-pointer transition">
                                       <Pencil className="w-3.5 h-3.5" /> Sửa hóa đơn
                                     </button>
-                                    <button onClick={() => { setCancelId(inv.id); setRowError(''); }}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-900/40 hover:bg-rose-900/60 text-rose-400 border border-rose-700 text-xs font-bold rounded-lg cursor-pointer transition">
-                                      <Ban className="w-3.5 h-3.5" /> Hủy HD
+                                    <button onClick={() => openReturn(inv)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-900/40 hover:bg-teal-900/60 text-teal-400 border border-teal-700 text-xs font-bold rounded-lg cursor-pointer transition">
+                                      <RotateCcw className="w-3.5 h-3.5" /> Trả hàng
                                     </button>
                                   </>
                                 )}
@@ -677,6 +711,145 @@ export default function Invoices({
                   disabled={editSaving || editItems.filter(it => it.qty > 0).length === 0}
                   className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-black rounded-lg text-sm font-bold cursor-pointer">
                   {editSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Return Order Modal */}
+      <AnimatePresence>
+        {returnInv && (
+          <div
+            className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 overflow-y-auto"
+            onClick={() => setReturnInv(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl w-full max-w-3xl my-4"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700">
+                <div>
+                  <h3 className="font-bold text-teal-400 flex items-center gap-2">
+                    <RotateCcw className="w-4 h-4" /> Tạo phiếu trả hàng
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Tham chiếu: <span className="font-mono text-amber-400">{returnInv.id}</span>
+                    {' · '}{new Date(returnInv.timestamp).toLocaleDateString('vi-VN')}
+                  </p>
+                </div>
+                <button onClick={() => setReturnInv(null)} className="text-zinc-500 hover:text-amber-400 cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {/* Items */}
+                <div className="overflow-x-auto rounded-xl border border-zinc-700">
+                  <table className="w-full text-xs">
+                    <thead className="bg-zinc-900 text-zinc-400 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Sản phẩm</th>
+                        <th className="px-3 py-2 text-right">Đơn giá</th>
+                        <th className="px-3 py-2 text-right">Đã mua</th>
+                        <th className="px-3 py-2 text-right">Đã trả trước</th>
+                        <th className="px-3 py-2 text-right">Còn trả được</th>
+                        <th className="px-3 py-2 text-center w-36">Số lượng trả</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-700">
+                      {returnInv.items.map(it => {
+                        const alreadyReturned = getAlreadyReturned(returnInv, it.product.id);
+                        const maxReturn = it.quantity - alreadyReturned;
+                        const current = returnQtys[it.product.id] ?? 0;
+                        const depleted = maxReturn <= 0;
+                        return (
+                          <tr key={it.product.id} className={depleted ? 'opacity-40' : 'hover:bg-zinc-700/30'}>
+                            <td className="px-3 py-2.5">
+                              <p className="font-bold text-amber-400">{it.product.name}</p>
+                              <p className="text-zinc-500 font-mono">{it.product.sku}</p>
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-mono text-amber-300">{fmt(it.product.sellingPrice)}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-zinc-300">{it.quantity}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-rose-400">{alreadyReturned > 0 ? alreadyReturned : '—'}</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-bold text-teal-400">{maxReturn}</td>
+                            <td className="px-3 py-2.5">
+                              {depleted ? (
+                                <span className="block text-center text-zinc-600 text-xs">Đã trả hết</span>
+                              ) : (
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    onClick={() => setReturnQtys(prev => ({ ...prev, [it.product.id]: Math.max(0, (prev[it.product.id] ?? 0) - 1) }))}
+                                    className="w-6 h-6 flex items-center justify-center bg-zinc-700 hover:bg-zinc-600 rounded text-amber-400 cursor-pointer">
+                                    <Minus className="w-3 h-3" />
+                                  </button>
+                                  <input
+                                    type="number" min={0} max={maxReturn}
+                                    value={current}
+                                    onChange={e => {
+                                      const v = Math.min(maxReturn, Math.max(0, Number(e.target.value)));
+                                      setReturnQtys(prev => ({ ...prev, [it.product.id]: v }));
+                                    }}
+                                    className="w-14 text-center bg-zinc-900 border border-zinc-600 text-amber-400 rounded text-xs py-1 font-mono focus:outline-none focus:border-teal-500"
+                                  />
+                                  <button
+                                    onClick={() => setReturnQtys(prev => ({ ...prev, [it.product.id]: Math.min(maxReturn, (prev[it.product.id] ?? 0) + 1) }))}
+                                    className="w-6 h-6 flex items-center justify-center bg-zinc-700 hover:bg-zinc-600 rounded text-amber-400 cursor-pointer">
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="text-xs font-bold text-zinc-400 mb-1 block">Ghi chú</label>
+                  <input
+                    value={returnNote} onChange={e => setReturnNote(e.target.value)}
+                    placeholder="Lý do trả hàng..."
+                    className="w-full px-3 py-2 bg-zinc-900 border border-zinc-600 text-amber-400 placeholder:text-zinc-600 rounded-lg text-sm focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                {/* Total */}
+                {(() => {
+                  const total = returnInv.items.reduce((s, it) => {
+                    const qty = returnQtys[it.product.id] ?? 0;
+                    return s + qty * it.product.sellingPrice;
+                  }, 0);
+                  return total > 0 ? (
+                    <div className="bg-teal-900/20 border border-teal-800 rounded-xl px-4 py-3 flex items-center justify-between">
+                      <span className="text-xs font-bold text-teal-400">Tổng tiền hoàn trả</span>
+                      <span className="text-lg font-extrabold font-mono text-teal-300">{fmt(total)}</span>
+                    </div>
+                  ) : null;
+                })()}
+
+                {returnError && (
+                  <div className="bg-rose-950/40 border border-rose-700 rounded-lg px-3 py-2 flex items-center gap-2 text-xs text-rose-400">
+                    <AlertTriangle className="w-4 h-4 shrink-0" /> {returnError}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 px-5 py-4 border-t border-zinc-700">
+                <button onClick={() => setReturnInv(null)}
+                  className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-400 hover:text-amber-400 hover:border-zinc-500 rounded-lg text-sm font-bold cursor-pointer">
+                  Hủy
+                </button>
+                <button onClick={doReturn} disabled={returnSaving}
+                  className="flex-1 px-4 py-2 bg-teal-700 hover:bg-teal-600 disabled:opacity-50 text-white rounded-lg text-sm font-bold cursor-pointer flex items-center justify-center gap-2">
+                  <RotateCcw className="w-4 h-4" />
+                  {returnSaving ? 'Đang tạo...' : 'Tạo phiếu trả hàng'}
                 </button>
               </div>
             </motion.div>

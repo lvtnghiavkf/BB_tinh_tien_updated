@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Product, Invoice, StoreConfig, PaymentMethod, Customer, Partner, PurchaseOrder, PurchaseOrderItem, SalaryEntry, PaymentLog, Expense } from '../types';
+import { Product, Invoice, StoreConfig, PaymentMethod, Customer, Partner, PurchaseOrder, PurchaseOrderItem, SalaryEntry, PaymentLog, Expense, ReturnOrder, ReturnItem } from '../types';
 
 // ── Invoices (update) ─────────────────────────────────────────────────────────
 
@@ -517,4 +517,53 @@ export async function updateExpense(e: Expense): Promise<void> {
 export async function deleteExpense(id: string): Promise<void> {
   const { error } = await supabase.from('expenses').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ── Return Orders (Phiếu trả hàng) ───────────────────────────────────────────
+
+export async function fetchReturnOrders(): Promise<ReturnOrder[]> {
+  const { data, error } = await supabase
+    .from('return_orders')
+    .select('*, return_order_items(*)')
+    .order('timestamp', { ascending: true });
+  if (error) throw error;
+  return data.map(r => ({
+    id: r.id,
+    invoiceId: r.invoice_id,
+    timestamp: r.timestamp,
+    items: (r.return_order_items ?? []).map((it: any): ReturnItem => ({
+      productId: it.product_id ?? '',
+      productName: it.product_name,
+      sku: it.sku ?? '',
+      quantity: it.quantity,
+      unitPrice: it.unit_price,
+    })),
+    totalRefund: r.total_refund,
+    notes: r.notes ?? undefined,
+  }));
+}
+
+export async function insertReturnOrder(ro: ReturnOrder): Promise<void> {
+  const { error: roErr } = await supabase.from('return_orders').insert({
+    id: ro.id,
+    invoice_id: ro.invoiceId,
+    timestamp: ro.timestamp,
+    total_refund: ro.totalRefund,
+    notes: ro.notes ?? null,
+  });
+  if (roErr) throw roErr;
+
+  if (ro.items.length > 0) {
+    const { error: itemsErr } = await supabase.from('return_order_items').insert(
+      ro.items.map(it => ({
+        return_order_id: ro.id,
+        product_id: it.productId,
+        product_name: it.productName,
+        sku: it.sku,
+        quantity: it.quantity,
+        unit_price: it.unitPrice,
+      }))
+    );
+    if (itemsErr) throw itemsErr;
+  }
 }

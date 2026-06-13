@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Customer, Partner, PurchaseOrder, Invoice, Product, PaymentLog } from '../types';
+import { Customer, Partner, PurchaseOrder, Invoice, Product, PaymentLog, ReturnOrder } from '../types';
 import {
   fetchCustomers, insertCustomer, updateCustomer, deleteCustomer,
   fetchPartners, insertPartner, updatePartner, deletePartner,
@@ -15,14 +15,16 @@ import { Users, Handshake, ChevronsUpDown, AlertCircle, FileText } from 'lucide-
 interface DataProps {
   invoices: Invoice[];
   products: Product[];
+  returnOrders: ReturnOrder[];
   onUpdateProductsStock: (updates: { id: string; delta: number }[]) => void;
   onUpdateInvoice?: (inv: Invoice) => Promise<void>;
+  onAddReturnOrder?: (ro: ReturnOrder) => Promise<void>;
   onPrintInvoice?: (inv: Invoice) => void;
 }
 
 type SubTab = 'customers' | 'partners' | 'orders' | 'invoices';
 
-export default function Data({ invoices, products, onUpdateProductsStock, onUpdateInvoice, onPrintInvoice }: DataProps) {
+export default function Data({ invoices, products, returnOrders, onUpdateProductsStock, onUpdateInvoice, onAddReturnOrder, onPrintInvoice }: DataProps) {
   const [subTab, setSubTab] = useState<SubTab>('customers');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -149,12 +151,14 @@ export default function Data({ invoices, products, onUpdateProductsStock, onUpda
               paymentLogs={paymentLogs}
               onPaymentLogAdded={log => setPaymentLogs(prev => [log, ...prev])} />
           )}
-          {subTab === 'invoices' && onUpdateInvoice && onPrintInvoice && (
+          {subTab === 'invoices' && onUpdateInvoice && onPrintInvoice && onAddReturnOrder && (
             <Invoices
               invoices={invoices}
               products={products}
+              returnOrders={returnOrders}
               onUpdateInvoice={onUpdateInvoice}
               onPrintInvoice={onPrintInvoice}
+              onAddReturnOrder={onAddReturnOrder}
               onUpdateProductsStock={onUpdateProductsStock}
             />
           )}

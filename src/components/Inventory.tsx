@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Product, Invoice } from '../types';
+import { Product, Invoice, ReturnOrder } from '../types';
 import { uploadProductImage } from '../lib/db';
 import {
   Plus, Search, Edit2, Trash2, Box, ArrowUpRight,
@@ -25,6 +25,7 @@ interface InventoryProps {
   onDeleteProduct: (id: string) => void;
   onRestockProduct: (id: string, amount: number) => void;
   invoices?: Invoice[];
+  returnOrders?: ReturnOrder[];
   onUpdateInvoice?: (inv: Invoice) => Promise<void>;
   onPrintInvoice?: (inv: Invoice) => void;
   onUpdateProductsStock?: (updates: { id: string; delta: number }[]) => Promise<void> | void;
@@ -51,6 +52,7 @@ export default function Inventory({
   onDeleteProduct,
   onRestockProduct,
   invoices = [],
+  returnOrders = [],
   onUpdateInvoice,
   onPrintInvoice,
   onUpdateProductsStock,
@@ -162,28 +164,55 @@ export default function Inventory({
   const PM_LABEL_INV: Record<string, string> = { CASH: 'Tiền mặt', QR: 'VietQR CK', CARD: 'Quẹt thẻ' };
 
   // ── Thẻ kho — tính tồn cuối cho sản phẩm đang mở rộng ───────────────────────
-  const ledgerEntries = useMemo(() => {
+  type LedgerRow =
+    | { entryType: 'sale';   inv: Invoice;      qty: number; unitPrice: number; cancelled: boolean; timestamp: string; tonCuoi: number | null }
+    | { entryType: 'return'; ro: ReturnOrder;   qty: number; unitPrice: number; cancelled: false;   timestamp: string; tonCuoi: number | null };
+
+  const ledgerEntries = useMemo((): LedgerRow[] => {
     if (!expandedId) return [];
     const ep = products.find(pr => pr.id === expandedId);
     if (!ep) return [];
-    // Lấy TẤT CẢ giao dịch kể cả đã hủy
-    const allEntries: { inv: Invoice; qty: number; unitPrice: number; cancelled: boolean }[] = [];
+
+    type RawEntry =
+      | { entryType: 'sale';   inv: Invoice;    qty: number; unitPrice: number; cancelled: boolean; timestamp: string }
+      | { entryType: 'return'; ro: ReturnOrder; qty: number; unitPrice: number; cancelled: false;   timestamp: string };
+    const raw: RawEntry[] = [];
+
+    // Giao dịch bán hàng (xuất kho)
     invoices.forEach(inv => {
       const isCancelled = (inv.status ?? 'completed') === 'cancelled';
       const item = inv.items.find(it => it.product.id === expandedId);
-      if (item) allEntries.push({ inv, qty: item.quantity, unitPrice: item.product.sellingPrice, cancelled: isCancelled });
+      if (item) raw.push({ entryType: 'sale', inv, qty: item.quantity, unitPrice: item.product.sellingPrice, cancelled: isCancelled, timestamp: inv.timestamp });
     });
-    allEntries.sort((a, b) => new Date(b.inv.timestamp).getTime() - new Date(a.inv.timestamp).getTime());
-    // Đi ngược từ tồn kho hiện tại, chỉ tính tồn cuối cho giao dịch KHÔNG hủy
+
+    // Phiếu trả hàng (nhập lại kho)
+    returnOrders.forEach(ro => {
+      const item = ro.items.find(it => it.productId === expandedId);
+      if (item) raw.push({ entryType: 'return', ro, qty: item.quantity, unitPrice: item.unitPrice, cancelled: false, timestamp: ro.timestamp });
+    });
+
+    // Sắp xếp mới nhất trước
+    raw.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    // Đi ngược từ tồn kho hiện tại:
+    // - Bán hàng (sale): tồn TĂNG khi đi ngược (running += qty)
+    // - Trả hàng (return): tồn GIẢM khi đi ngược (running -= qty)
+    // - Hủy bán (cancelled): không ảnh hưởng running (tồn đã được hoàn phục)
     let running = ep.stock;
-    const result = allEntries.map(e => {
-      if (e.cancelled) return { ...e, tonCuoi: null as number | null };
-      const tonCuoi: number | null = running;
-      running += e.qty;
-      return { ...e, tonCuoi };
+    const result: LedgerRow[] = raw.map(e => {
+      if (e.entryType === 'sale') {
+        if (e.cancelled) return { ...e, tonCuoi: null };
+        const tonCuoi = running;
+        running += e.qty;
+        return { ...e, tonCuoi };
+      } else {
+        const tonCuoi = running;
+        running -= e.qty;
+        return { ...e, tonCuoi };
+      }
     });
     return result.reverse();
-  }, [invoices, expandedId, products]);
+  }, [invoices, returnOrders, expandedId, products]);
 
   function openLedgerInvoice(inv: Invoice) {
     setLedgerInvoice(inv); setLedgerMode('view'); setLedgerError('');
@@ -916,34 +945,50 @@ export default function Inventory({
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-zinc-800">
-                                        {ledgerEntries.map(({ inv, qty, unitPrice, tonCuoi, cancelled }) => (
-                                            <tr key={inv.id} className={`transition ${cancelled ? 'opacity-40 bg-rose-950/10' : 'hover:bg-zinc-800/40'}`}>
+                                        {ledgerEntries.map(entry => {
+                                          const isReturn = entry.entryType === 'return';
+                                          const docId = isReturn ? entry.ro.id : entry.inv.id;
+                                          const ts = entry.timestamp;
+                                          const { qty, unitPrice, tonCuoi, cancelled } = entry;
+                                          return (
+                                            <tr key={`${entry.entryType}-${docId}`}
+                                              className={`transition ${cancelled ? 'opacity-40 bg-rose-950/10' : isReturn ? 'bg-teal-950/10 hover:bg-teal-900/20' : 'hover:bg-zinc-800/40'}`}>
                                               <td className="px-3 py-2.5">
-                                                <button onClick={() => openLedgerInvoice(inv)}
-                                                  className={`font-mono font-bold hover:underline cursor-pointer ${cancelled ? 'text-rose-400 line-through' : 'text-amber-400 hover:text-amber-300'}`}>
-                                                  {inv.id}
-                                                </button>
+                                                {isReturn ? (
+                                                  <span className="font-mono font-bold text-teal-400">{entry.ro.id}</span>
+                                                ) : (
+                                                  <button onClick={() => openLedgerInvoice(entry.inv)}
+                                                    className={`font-mono font-bold hover:underline cursor-pointer ${cancelled ? 'text-rose-400 line-through' : 'text-amber-400 hover:text-amber-300'}`}>
+                                                    {entry.inv.id}
+                                                  </button>
+                                                )}
+                                                {isReturn && <span className="ml-1.5 text-[9px] text-teal-400 font-bold border border-teal-700/60 rounded px-1 py-0.5 bg-teal-950/40">TRẢ HÀNG</span>}
                                                 {cancelled && <span className="ml-1.5 text-[9px] text-rose-400 font-bold border border-rose-700/60 rounded px-1 py-0.5 bg-rose-950/40">ĐÃ HỦY</span>}
                                               </td>
                                               <td className="px-3 py-2.5 text-zinc-400 whitespace-nowrap font-mono">
-                                                {new Date(inv.timestamp).toLocaleDateString('vi-VN')} {new Date(inv.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                                {new Date(ts).toLocaleDateString('vi-VN')} {new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                                               </td>
                                               <td className="px-3 py-2.5 text-zinc-300">
-                                                {inv.customerName || <span className="text-zinc-500 italic">Khách lẻ</span>}
+                                                {isReturn
+                                                  ? <span className="text-teal-400/70 text-xs font-mono">← {entry.ro.invoiceId}</span>
+                                                  : (entry.inv.customerName || <span className="text-zinc-500 italic">Khách lẻ</span>)}
                                               </td>
                                               <td className="px-3 py-2.5 text-center text-zinc-400 whitespace-nowrap">
-                                                {PM_LABEL_INV[inv.paymentMethod] ?? inv.paymentMethod}
+                                                {isReturn ? '—' : (PM_LABEL_INV[entry.inv.paymentMethod] ?? entry.inv.paymentMethod)}
                                               </td>
                                               <td className={`px-3 py-2.5 text-right font-mono ${cancelled ? 'text-zinc-600 line-through' : 'text-amber-400'}`}>{formatVND(unitPrice)}</td>
                                               <td className="px-3 py-2.5 text-right font-mono text-zinc-400">
-                                                {inv.discountPercent > 0 ? `${inv.discountPercent}%` : inv.discountAmount > 0 ? formatVND(inv.discountAmount) : '—'}
+                                                {isReturn ? '—' : (entry.inv.discountPercent > 0 ? `${entry.inv.discountPercent}%` : entry.inv.discountAmount > 0 ? formatVND(entry.inv.discountAmount) : '—')}
                                               </td>
-                                              <td className={`px-3 py-2.5 text-right font-mono font-bold ${cancelled ? 'text-zinc-600 line-through' : 'text-rose-400'}`}>−{qty}</td>
+                                              <td className={`px-3 py-2.5 text-right font-mono font-bold ${cancelled ? 'text-zinc-600 line-through' : isReturn ? 'text-teal-400' : 'text-rose-400'}`}>
+                                                {isReturn ? `+${qty}` : `−${qty}`}
+                                              </td>
                                               <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">
                                                 {tonCuoi !== null ? tonCuoi : <span className="text-zinc-600">—</span>}
                                               </td>
                                             </tr>
-                                          ))}
+                                          );
+                                        })}
                                       </tbody>
                                     </table>
                                   </div>

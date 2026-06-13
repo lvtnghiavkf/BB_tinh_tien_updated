@@ -217,7 +217,8 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       if (draftNotes.trim()) noteLines.push(draftNotes.trim());
       finalNotes = noteLines.join(' — ');
     } else {
-      newOrderId = `PO${Date.now()}`;
+      const rnd = Math.floor(10000 + Math.random() * 90000);
+      newOrderId = draftType === 'import' ? `NH${rnd}` : `XH${rnd}`;
       finalNotes = draftNotes.trim() || undefined;
     }
 
