@@ -80,7 +80,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
 
   const topSearchSuggestions = useMemo(() => {
     const q = topSearch.toLowerCase().trim();
-    if (!q) return products.slice(0, 15);
+    if (!q) return [];
     return products.filter(p =>
       p.name.toLowerCase().includes(q) ||
       p.sku.toLowerCase().includes(q) ||
@@ -674,7 +674,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
               <div className="flex flex-col flex-1 overflow-hidden bg-white">
 
                 {/* Top search */}
-                <div className="px-4 py-2.5 border-b border-slate-200 bg-slate-50 relative z-20 shrink-0">
+                <div className="px-4 pt-4 pb-3 border-b border-slate-200 bg-slate-50 relative z-20 shrink-0">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                     <input
@@ -746,8 +746,8 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                             <td className="px-3 py-2 text-right font-mono text-slate-400 text-xs">{prod ? formatVND(prod.costPrice) : '—'}</td>
                             <td className="px-3 py-2 text-right font-mono text-emerald-600 text-xs">{prod ? formatVND(prod.sellingPrice) : '—'}</td>
                             <td className="px-3 py-2">
-                              <input type="number" min={0.001} step={0.001} value={item.quantity}
-                                onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Number(e.target.value) || 1 } : it))}
+                              <input type="number" min={1} step={1} value={item.quantity}
+                                onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: Math.max(1, Number(e.target.value) || 1) } : it))}
                                 className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm text-right focus:outline-none focus:border-blue-500 bg-white font-bold" />
                             </td>
                             <td className="px-3 py-2">
@@ -781,6 +781,26 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
 
               {/* RIGHT: order info */}
               <div className="w-80 shrink-0 border-l border-zinc-700 bg-zinc-900 flex flex-col">
+
+                {/* Import/Export selector — aligned with left search bar */}
+                <div className="px-4 pt-4 pb-3 border-b border-zinc-700 shrink-0">
+                  {!revisingOrder ? (
+                    <div className="flex gap-1 bg-zinc-800 rounded-lg p-0.5">
+                      {(['import', 'export'] as const).map(t => (
+                        <button key={t} onClick={() => setDraftType(t)}
+                          className={`flex-1 py-2 rounded-md text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${draftType === t ? (t === 'import' ? 'bg-blue-600 text-white' : 'bg-amber-500 text-white') : 'text-zinc-400 hover:text-zinc-200'}`}>
+                          {t === 'import' ? <><ArrowDownToLine className="w-3.5 h-3.5" />Nhập hàng</> : <><ArrowUpFromLine className="w-3.5 h-3.5" />Xuất hàng</>}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 bg-amber-950/30 border border-amber-700/50 rounded-lg px-3 py-2">
+                      <GitBranch className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="text-xs text-amber-300 font-bold">Điều chỉnh phiếu {revisingOrder.id}</span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="p-4 space-y-4 flex-1 overflow-y-auto">
 
                   {/* Partner search */}
