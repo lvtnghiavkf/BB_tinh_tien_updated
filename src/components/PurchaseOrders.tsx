@@ -51,6 +51,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   // History detail modal
   const [viewingHistoryOrder, setViewingHistoryOrder] = useState<PurchaseOrder | null>(null);
 
+  const [activeProductDropdown, setActiveProductDropdown] = useState<number | null>(null);
   const partnerDropdownRef = useRef<HTMLDivElement>(null);
 
   const filteredPartners = useMemo(() => {
@@ -179,7 +180,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       sku: it.sku,
       quantity: it.quantity,
       unitCost: it.unitCost,
-      barcodeInput: '',
+      barcodeInput: products.find(p => p.id === it.productId)?.barcode ?? '',
     })));
     setReviseNotes('');
     setShowCreate(true);
@@ -193,18 +194,32 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       productName: prod?.name ?? '',
       sku: prod?.sku ?? '',
       unitCost: prod?.costPrice ?? 0,
-      barcodeInput: '',
+      barcodeInput: prod?.barcode ?? '',
     } : it));
+    setActiveProductDropdown(null);
+  }
+
+  function handleProductNameInput(idx: number, value: string) {
+    setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, productName: value, productId: '', sku: '', barcodeInput: '' } : it));
+    setActiveProductDropdown(idx);
+  }
+
+  function handleSkuInput(idx: number, value: string) {
+    setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, sku: value, productId: '' } : it));
+    const match = products.find(p => p.sku === value.trim());
+    if (match) setItemProduct(idx, match.id);
   }
 
   function handleBarcodeInput(idx: number, value: string) {
-    setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, barcodeInput: value } : it));
     const trimmed = value.trim();
-    if (!trimmed) return;
-    const match = products.find(p =>
+    const match = trimmed ? products.find(p =>
       (p.barcode && p.barcode === trimmed) || p.sku === trimmed
-    );
-    if (match) setItemProduct(idx, match.id);
+    ) : null;
+    if (match) {
+      setItemProduct(idx, match.id);
+    } else {
+      setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, barcodeInput: value } : it));
+    }
   }
 
   async function handleCreate() {
@@ -715,33 +730,56 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                           return (
                             <tr key={idx} className="hover:bg-zinc-800/40">
                               <td className="px-2 py-1.5 text-slate-400 text-center">{idx + 1}</td>
-                              <td className="px-2 py-1.5">
-                                <select value={item.productId} onChange={e => setItemProduct(idx, e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[160px]">
-                                  <option value="">— Chọn sản phẩm —</option>
-                                  {products.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name}</option>
-                                  ))}
-                                </select>
+                              <td className="px-2 py-1.5 relative">
+                                <input
+                                  value={item.productName}
+                                  onChange={e => handleProductNameInput(idx, e.target.value)}
+                                  onFocus={() => setActiveProductDropdown(idx)}
+                                  onBlur={() => setTimeout(() => setActiveProductDropdown(null), 160)}
+                                  placeholder="Tìm tên / SKU / barcode..."
+                                  className={`w-full px-2 py-1.5 border rounded-lg text-xs focus:outline-none min-w-[160px] ${item.productId ? 'border-blue-300 bg-blue-50 text-blue-800 font-semibold' : 'border-slate-200 bg-white text-slate-700 focus:border-blue-500'}`}
+                                />
+                                {activeProductDropdown === idx && (() => {
+                                  const q = item.productName.toLowerCase().trim();
+                                  const sugg = q
+                                    ? products.filter(p =>
+                                        p.name.toLowerCase().includes(q) ||
+                                        p.sku.toLowerCase().includes(q) ||
+                                        (p.barcode && p.barcode.includes(q))
+                                      ).slice(0, 10)
+                                    : products.slice(0, 10);
+                                  return sugg.length > 0 ? (
+                                    <div className="absolute left-0 top-full z-40 mt-0.5 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[220px] max-h-52 overflow-y-auto">
+                                      {sugg.map(p => (
+                                        <button key={p.id} type="button"
+                                          onMouseDown={() => setItemProduct(idx, p.id)}
+                                          className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition flex flex-col border-b border-slate-50 last:border-0">
+                                          <span className="font-semibold text-slate-800">{p.name}</span>
+                                          <span className="text-slate-400 font-mono">{p.sku}{p.barcode ? ` · ${p.barcode}` : ''}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : null;
+                                })()}
                               </td>
                               {/* Mã SKU */}
                               <td className="px-2 py-1.5">
-                                {item.sku
-                                  ? <span className="inline-block px-2 py-0.5 bg-zinc-800 border border-zinc-600 text-amber-400 font-mono text-xs rounded font-bold">{item.sku}</span>
-                                  : <span className="text-slate-400 text-xs">—</span>}
+                                <input
+                                  value={item.sku}
+                                  onChange={e => handleSkuInput(idx, e.target.value)}
+                                  placeholder="Nhập SKU..."
+                                  className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-mono focus:outline-none focus:border-amber-400 bg-white text-amber-700 min-w-[70px]"
+                                />
                               </td>
                               {/* Barcode */}
                               <td className="px-2 py-1.5">
                                 <div className="relative">
                                   <Scan className="absolute left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
                                   <input
-                                    value={item.productId
-                                      ? (products.find(p => p.id === item.productId)?.barcode ?? item.barcodeInput)
-                                      : item.barcodeInput}
+                                    value={item.barcodeInput}
                                     onChange={e => handleBarcodeInput(idx, e.target.value)}
                                     placeholder="Quét / nhập..."
-                                    readOnly={!!item.productId}
-                                    className={`w-full pl-6 pr-2 py-1 border rounded text-xs font-mono focus:outline-none min-w-[90px] ${item.productId ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-default' : 'border-slate-300 bg-white focus:border-blue-500 text-slate-700'}`}
+                                    className="w-full pl-6 pr-2 py-1 border border-slate-300 rounded text-xs font-mono focus:outline-none focus:border-blue-500 bg-white text-slate-700 min-w-[90px]"
                                   />
                                 </div>
                               </td>
