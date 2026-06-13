@@ -51,7 +51,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   // History detail modal
   const [viewingHistoryOrder, setViewingHistoryOrder] = useState<PurchaseOrder | null>(null);
 
-  const [activeProductDropdown, setActiveProductDropdown] = useState<number | null>(null);
+  const [activeDropdown, setActiveDropdown] = useState<{ idx: number; field: 'name' | 'sku' | 'barcode' } | null>(null);
   const partnerDropdownRef = useRef<HTMLDivElement>(null);
 
   const filteredPartners = useMemo(() => {
@@ -196,31 +196,25 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       unitCost: prod?.costPrice ?? 0,
       barcodeInput: prod?.barcode ?? '',
     } : it));
-    setActiveProductDropdown(null);
+    setActiveDropdown(null);
   }
 
   function handleProductNameInput(idx: number, value: string) {
     setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, productName: value, productId: '', sku: '', barcodeInput: '' } : it));
-    setActiveProductDropdown(idx);
+    setActiveDropdown({ idx, field: 'name' });
   }
 
   function handleSkuInput(idx: number, value: string) {
-    setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, sku: value, productId: '' } : it));
-    const match = products.find(p => p.sku === value.trim());
-    if (match) setItemProduct(idx, match.id);
+    setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, sku: value, productId: '', productName: '', barcodeInput: '' } : it));
+    setActiveDropdown({ idx, field: 'sku' });
   }
 
   function handleBarcodeInput(idx: number, value: string) {
-    const trimmed = value.trim();
-    const match = trimmed ? products.find(p =>
-      (p.barcode && p.barcode === trimmed) || p.sku === trimmed
-    ) : null;
-    if (match) {
-      setItemProduct(idx, match.id);
-    } else {
-      setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, barcodeInput: value } : it));
-    }
+    setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, barcodeInput: value, productId: '', productName: '', sku: '' } : it));
+    setActiveDropdown({ idx, field: 'barcode' });
   }
+
+  function closeDropdown() { setTimeout(() => setActiveDropdown(null), 160); }
 
   async function handleCreate() {
     const validItems = draftItems.filter(it => it.productId && it.quantity > 0);
@@ -730,16 +724,17 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                           return (
                             <tr key={idx} className="hover:bg-zinc-800/40">
                               <td className="px-2 py-1.5 text-slate-400 text-center">{idx + 1}</td>
+                              {/* Tên sản phẩm — autocomplete */}
                               <td className="px-2 py-1.5 relative">
                                 <input
                                   value={item.productName}
                                   onChange={e => handleProductNameInput(idx, e.target.value)}
-                                  onFocus={() => setActiveProductDropdown(idx)}
-                                  onBlur={() => setTimeout(() => setActiveProductDropdown(null), 160)}
-                                  placeholder="Tìm tên / SKU / barcode..."
+                                  onFocus={() => setActiveDropdown({ idx, field: 'name' })}
+                                  onBlur={closeDropdown}
+                                  placeholder="Tìm tên sản phẩm..."
                                   className={`w-full px-2 py-1.5 border rounded-lg text-xs focus:outline-none min-w-[160px] ${item.productId ? 'border-blue-300 bg-blue-50 text-blue-800 font-semibold' : 'border-slate-200 bg-white text-slate-700 focus:border-blue-500'}`}
                                 />
-                                {activeProductDropdown === idx && (() => {
+                                {activeDropdown?.idx === idx && activeDropdown.field === 'name' && (() => {
                                   const q = item.productName.toLowerCase().trim();
                                   const sugg = q
                                     ? products.filter(p =>
@@ -751,8 +746,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                                   return sugg.length > 0 ? (
                                     <div className="absolute left-0 top-full z-40 mt-0.5 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[220px] max-h-52 overflow-y-auto">
                                       {sugg.map(p => (
-                                        <button key={p.id} type="button"
-                                          onMouseDown={() => setItemProduct(idx, p.id)}
+                                        <button key={p.id} type="button" onMouseDown={() => setItemProduct(idx, p.id)}
                                           className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition flex flex-col border-b border-slate-50 last:border-0">
                                           <span className="font-semibold text-slate-800">{p.name}</span>
                                           <span className="text-slate-400 font-mono">{p.sku}{p.barcode ? ` · ${p.barcode}` : ''}</span>
@@ -762,26 +756,64 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                                   ) : null;
                                 })()}
                               </td>
-                              {/* Mã SKU */}
-                              <td className="px-2 py-1.5">
+                              {/* Mã SKU — autocomplete */}
+                              <td className="px-2 py-1.5 relative">
                                 <input
                                   value={item.sku}
                                   onChange={e => handleSkuInput(idx, e.target.value)}
+                                  onFocus={() => setActiveDropdown({ idx, field: 'sku' })}
+                                  onBlur={closeDropdown}
                                   placeholder="Nhập SKU..."
                                   className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-mono focus:outline-none focus:border-amber-400 bg-white text-amber-700 min-w-[70px]"
                                 />
+                                {activeDropdown?.idx === idx && activeDropdown.field === 'sku' && (() => {
+                                  const q = item.sku.toLowerCase().trim();
+                                  const sugg = q
+                                    ? products.filter(p => p.sku.toLowerCase().includes(q)).slice(0, 10)
+                                    : products.filter(p => p.sku).slice(0, 10);
+                                  return sugg.length > 0 ? (
+                                    <div className="absolute left-0 top-full z-40 mt-0.5 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[200px] max-h-52 overflow-y-auto">
+                                      {sugg.map(p => (
+                                        <button key={p.id} type="button" onMouseDown={() => setItemProduct(idx, p.id)}
+                                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 transition flex flex-col border-b border-slate-50 last:border-0">
+                                          <span className="font-mono font-bold text-amber-700">{p.sku}</span>
+                                          <span className="text-slate-500">{p.name}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : null;
+                                })()}
                               </td>
-                              {/* Barcode */}
-                              <td className="px-2 py-1.5">
+                              {/* Barcode — autocomplete */}
+                              <td className="px-2 py-1.5 relative">
                                 <div className="relative">
                                   <Scan className="absolute left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
                                   <input
                                     value={item.barcodeInput}
                                     onChange={e => handleBarcodeInput(idx, e.target.value)}
+                                    onFocus={() => setActiveDropdown({ idx, field: 'barcode' })}
+                                    onBlur={closeDropdown}
                                     placeholder="Quét / nhập..."
                                     className="w-full pl-6 pr-2 py-1 border border-slate-300 rounded text-xs font-mono focus:outline-none focus:border-blue-500 bg-white text-slate-700 min-w-[90px]"
                                   />
                                 </div>
+                                {activeDropdown?.idx === idx && activeDropdown.field === 'barcode' && (() => {
+                                  const q = item.barcodeInput.trim();
+                                  const sugg = q
+                                    ? products.filter(p => p.barcode && p.barcode.includes(q)).slice(0, 10)
+                                    : products.filter(p => p.barcode).slice(0, 10);
+                                  return sugg.length > 0 ? (
+                                    <div className="absolute left-0 top-full z-40 mt-0.5 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[220px] max-h-52 overflow-y-auto">
+                                      {sugg.map(p => (
+                                        <button key={p.id} type="button" onMouseDown={() => setItemProduct(idx, p.id)}
+                                          className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition flex flex-col border-b border-slate-50 last:border-0">
+                                          <span className="font-mono font-bold text-slate-700 flex items-center gap-1"><Scan className="w-3 h-3 text-slate-400" />{p.barcode}</span>
+                                          <span className="text-slate-500">{p.name}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : null;
+                                })()}
                               </td>
                               <td className="px-2 py-1.5 text-center text-slate-500">{prod?.brand || '—'}</td>
                               <td className="px-2 py-1.5 text-center text-slate-500">{prod?.unit || '—'}</td>
