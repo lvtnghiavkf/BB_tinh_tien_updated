@@ -61,12 +61,12 @@ export default function Invoices({
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
 
-  const [showReturnOrders, setShowReturnOrders] = useState(false);
+  const [viewMode, setViewMode] = useState<'all' | 'returns' | 'adjusted'>('all');
+  const [expandedReturnId, setExpandedReturnId] = useState<string | null>(null);
 
   const [timeFilter, setTimeFilter] = useState<'1' | '3' | '7' | '30' | 'custom'>('30');
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
-  const [showAdjustedOnly, setShowAdjustedOnly] = useState(false);
 
   const sorted = useMemo(
     () => [...invoices].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
@@ -104,20 +104,20 @@ export default function Invoices({
   }), [returnOrders, dateFrom, dateTo]);
 
   const stats = useMemo(() => {
-    const all      = rangeList.filter(i => (i.status ?? 'completed') !== 'cancelled' && !i.isAdjusted);
-    const adjusted = rangeList.filter(i => i.isAdjusted);
+    const nonCancelled = rangeList.filter(i => (i.status ?? 'completed') !== 'cancelled');
+    const adjusted     = rangeList.filter(i => i.isAdjusted);
     return {
-      all:     { count: all.length,              amount: all.reduce((s, i) => s + i.finalAmount, 0) },
-      returns: { count: returnsInRange.length,   amount: returnsInRange.reduce((s, ro) => s + ro.totalRefund, 0) },
-      adjusted:{ count: adjusted.length,         amount: adjusted.reduce((s, i) => s + i.finalAmount, 0) },
+      all:      { count: nonCancelled.length + returnsInRange.length, amount: nonCancelled.reduce((s, i) => s + i.finalAmount, 0) },
+      returns:  { count: returnsInRange.length,  amount: returnsInRange.reduce((s, ro) => s + ro.totalRefund, 0) },
+      adjusted: { count: adjusted.length,        amount: adjusted.reduce((s, i) => s + i.finalAmount, 0) },
     };
   }, [rangeList, returnsInRange]);
 
   const filtered = useMemo(() => {
     let list = rangeList;
+    if (viewMode === 'adjusted') list = list.filter(i => i.isAdjusted);
     if (pmFilter) list = list.filter(i => i.paymentMethod === pmFilter);
     if (statusFilter) list = list.filter(i => (i.status ?? 'completed') === statusFilter);
-    if (showAdjustedOnly) list = list.filter(i => i.isAdjusted);
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(i =>
@@ -127,7 +127,23 @@ export default function Invoices({
       );
     }
     return list;
-  }, [rangeList, search, pmFilter, statusFilter, showAdjustedOnly]);
+  }, [rangeList, search, pmFilter, statusFilter, viewMode]);
+
+  const filteredReturns = useMemo(() => {
+    if (!search) return returnsInRange;
+    const q = search.toLowerCase();
+    return returnsInRange.filter(ro => ro.id.toLowerCase().includes(q) || ro.invoiceId.toLowerCase().includes(q));
+  }, [returnsInRange, search]);
+
+  type UnifiedRow = { kind: 'invoice'; data: Invoice } | { kind: 'return'; data: ReturnOrder };
+  const unifiedList = useMemo((): UnifiedRow[] => {
+    if (viewMode !== 'all') return [];
+    const invRows: UnifiedRow[] = filtered.map(data => ({ kind: 'invoice' as const, data }));
+    const retRows: UnifiedRow[] = filteredReturns.map(data => ({ kind: 'return' as const, data }));
+    return [...invRows, ...retRows].sort((a, b) =>
+      new Date(b.data.timestamp).getTime() - new Date(a.data.timestamp).getTime()
+    );
+  }, [viewMode, filtered, filteredReturns]);
 
   const isCancelled = (inv: Invoice) => (inv.status ?? 'completed') === 'cancelled';
 
@@ -280,14 +296,14 @@ export default function Invoices({
     ? (v / 1_000_000).toFixed(1).replace(/\.0$/, '') + ' tr'
     : v >= 1_000 ? (v / 1_000).toFixed(0) + ' k' : String(v);
 
-  const activeCard = showAdjustedOnly ? 'adjusted' : 'all';
+  const activeCard = viewMode;
 
   return (
     <div className="space-y-4">
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         {/* Tổng hóa đơn */}
-        <button type="button" onClick={() => { setStatusFilter(''); setShowAdjustedOnly(false); }}
+        <button type="button" onClick={() => { setStatusFilter(''); setViewMode('all'); }}
           className={`text-left p-4 rounded-xl border transition cursor-pointer ${activeCard === 'all' ? 'border-blue-500 bg-blue-900/20' : 'border-zinc-700 bg-zinc-900 hover:border-zinc-500'}`}>
           <div className="flex items-center gap-2 mb-2">
             <Receipt className={`w-4 h-4 ${activeCard === 'all' ? 'text-blue-400' : 'text-zinc-500'}`} />
@@ -298,8 +314,8 @@ export default function Invoices({
         </button>
 
         {/* Phiếu trả hàng */}
-        <button type="button" onClick={() => setShowReturnOrders(true)}
-          className="text-left p-4 rounded-xl border border-zinc-700 bg-zinc-900 hover:border-teal-600 transition cursor-pointer">
+        <button type="button" onClick={() => setViewMode('returns')}
+          className={`text-left p-4 rounded-xl border transition cursor-pointer ${activeCard === 'returns' ? 'border-teal-500 bg-teal-900/20' : 'border-zinc-700 bg-zinc-900 hover:border-teal-600'}`}>
           <div className="flex items-center gap-2 mb-2">
             <RotateCcw className="w-4 h-4 text-teal-400" />
             <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Phiếu trả hàng</span>
@@ -309,7 +325,7 @@ export default function Invoices({
         </button>
 
         {/* Hóa đơn điều chỉnh */}
-        <button type="button" onClick={() => { setStatusFilter(''); setShowAdjustedOnly(true); }}
+        <button type="button" onClick={() => { setStatusFilter(''); setViewMode('adjusted'); }}
           className={`text-left p-4 rounded-xl border transition cursor-pointer ${activeCard === 'adjusted' ? 'border-amber-500 bg-amber-900/20' : 'border-zinc-700 bg-zinc-900 hover:border-zinc-500'}`}>
           <div className="flex items-center gap-2 mb-2">
             <FilePenLine className={`w-4 h-4 ${activeCard === 'adjusted' ? 'text-amber-400' : 'text-zinc-500'}`} />
@@ -361,217 +377,333 @@ export default function Invoices({
         </select>
       </div>
 
-      {/* Invoice table */}
+      {/* Main table — conditional on viewMode */}
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
-        {filtered.length === 0 ? (
-          <div className="p-12 text-center text-zinc-500">
-            <FileText className="w-10 h-10 mx-auto stroke-1 mb-2" />
-            <p className="text-xs font-semibold">Không tìm thấy hóa đơn</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-zinc-800 border-b border-zinc-700 text-zinc-400 text-xs font-bold uppercase tracking-wider">
-                  <th className="px-3 py-3 w-10 text-center">#</th>
-                  <th className="px-4 py-3 font-mono">Mã HD</th>
-                  <th className="px-4 py-3">Thời gian</th>
-                  <th className="px-4 py-3">Khách hàng</th>
-                  <th className="px-4 py-3 text-right">Tổng tiền</th>
-                  <th className="px-4 py-3 text-center">Hình thức</th>
-                  <th className="px-4 py-3 text-center">Trạng thái</th>
-                  <th className="px-4 py-3 text-center">T.Toán</th>
-                  <th className="px-4 py-3 w-8"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(inv => {
-                  const isOpen = expandedId === inv.id;
-                  const cancelled = isCancelled(inv);
-                  return (
-                    <React.Fragment key={inv.id}>
-                      <tr
-                        onClick={() => {
-                          setExpandedId(isOpen ? null : inv.id);
-                          setRowError(''); setNoteEditId(null);
-                        }}
-                        className={`border-b border-zinc-800 cursor-pointer transition-colors
-                          ${isOpen ? 'bg-amber-950/20' : 'hover:bg-zinc-800/60'}
-                          ${cancelled ? 'opacity-50' : ''}`}
-                      >
-                        <td className="px-3 py-3 text-center text-zinc-500 text-xs font-mono">{filtered.indexOf(inv) + 1}</td>
-                        <td className="px-4 py-3 font-mono font-bold text-amber-400">{inv.id}</td>
-                        <td className="px-4 py-3 text-zinc-400 text-xs font-mono whitespace-nowrap">
-                          {new Date(inv.timestamp).toLocaleDateString('vi-VN')}{' '}
-                          {new Date(inv.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                        </td>
-                        <td className="px-4 py-3">
-                          {inv.customerName
-                            ? <><p className="font-semibold text-amber-300">{inv.customerName}</p>
-                                {inv.customerPhone && <p className="text-[10px] text-zinc-500 font-mono">{inv.customerPhone}</p>}</>
-                            : <span className="text-zinc-500 text-xs">Khách lẻ</span>}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 whitespace-nowrap">
-                          {fmt(inv.finalAmount)}
-                          {inv.discountAmount > 0 && (
-                            <span className="block text-[10px] text-emerald-400 font-normal">-{fmt(inv.discountAmount)}</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${PM_COLOR[inv.paymentMethod] ?? ''}`}>
-                            {PM_LABEL[inv.paymentMethod] ?? inv.paymentMethod}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {cancelled
-                            ? <span className="px-2 py-0.5 bg-rose-900/40 text-rose-300 border border-rose-700 rounded-md text-[10px] font-bold">Đã hủy</span>
-                            : <span className="px-2 py-0.5 bg-emerald-900/40 text-emerald-300 border border-emerald-700 rounded-md text-[10px] font-bold">Hoàn thành</span>}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {!cancelled && (
-                            <button
-                              onClick={e => { e.stopPropagation(); onUpdateInvoice({ ...inv, paymentStatus: (inv.paymentStatus ?? 'paid') === 'paid' ? 'unpaid' : 'paid' }); }}
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border cursor-pointer transition ${
-                                (inv.paymentStatus ?? 'paid') === 'paid'
-                                  ? 'bg-emerald-900/40 text-emerald-300 border-emerald-700'
-                                  : 'bg-amber-900/40 text-amber-300 border-amber-700'
-                              }`}>
-                              {(inv.paymentStatus ?? 'paid') === 'paid' ? 'Đã TT' : 'Chưa TT'}
-                            </button>
-                          )}
-                          {cancelled && <span className="text-zinc-600 text-xs">—</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${isOpen ? 'rotate-180 text-amber-400' : ''}`} />
-                        </td>
-                      </tr>
 
-                      {isOpen && (
-                        <tr className="bg-amber-950/10 border-b border-zinc-800">
-                          <td colSpan={9} className="px-5 py-4">
-                            <div className="space-y-4" onClick={e => e.stopPropagation()}>
-
-                              {/* Items table */}
+        {/* ── RETURNS view ── */}
+        {viewMode === 'returns' && (
+          filteredReturns.length === 0 ? (
+            <div className="p-12 text-center text-zinc-500">
+              <RotateCcw className="w-10 h-10 mx-auto stroke-1 mb-2" />
+              <p className="text-xs font-semibold">Không có phiếu trả hàng</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-zinc-800 border-b border-zinc-700 text-zinc-400 text-xs font-bold uppercase tracking-wider">
+                    <th className="px-3 py-3 w-10 text-center">#</th>
+                    <th className="px-4 py-3 font-mono">Mã phiếu TH</th>
+                    <th className="px-4 py-3">Thời gian</th>
+                    <th className="px-4 py-3">Hóa đơn gốc</th>
+                    <th className="px-4 py-3">Sản phẩm</th>
+                    <th className="px-4 py-3 text-right">Tổng hoàn</th>
+                    <th className="px-4 py-3 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...filteredReturns].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map((ro, i) => {
+                    const isOpen = expandedReturnId === ro.id;
+                    return (
+                      <React.Fragment key={ro.id}>
+                        <tr onClick={() => setExpandedReturnId(isOpen ? null : ro.id)}
+                          className={`border-b border-zinc-800 cursor-pointer transition-colors ${isOpen ? 'bg-teal-950/20' : 'hover:bg-zinc-800/60'}`}>
+                          <td className="px-3 py-3 text-center text-zinc-500 text-xs font-mono">{i + 1}</td>
+                          <td className="px-4 py-3 font-mono font-bold text-teal-400">{ro.id}</td>
+                          <td className="px-4 py-3 text-zinc-400 text-xs font-mono whitespace-nowrap">
+                            {new Date(ro.timestamp).toLocaleDateString('vi-VN')}{' '}
+                            {new Date(ro.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-amber-400 text-xs">{ro.invoiceId}</td>
+                          <td className="px-4 py-3 text-zinc-400 text-xs">{ro.items.length} sản phẩm</td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-rose-400">{fmt(ro.totalRefund)}</td>
+                          <td className="px-4 py-3">
+                            <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${isOpen ? 'rotate-180 text-teal-400' : ''}`} />
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr className="bg-teal-950/10 border-b border-zinc-800">
+                            <td colSpan={7} className="px-5 py-4" onClick={e => e.stopPropagation()}>
                               <div className="overflow-x-auto rounded-xl border border-zinc-700">
                                 <table className="w-full text-sm text-left">
                                   <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
                                     <tr>
                                       <th className="px-3 py-2">Mã hàng</th>
                                       <th className="px-3 py-2">Tên hàng</th>
-                                      <th className="px-3 py-2 text-center">SL</th>
+                                      <th className="px-3 py-2 text-center">SL trả</th>
                                       <th className="px-3 py-2 text-right">Đơn giá</th>
-                                      <th className="px-3 py-2 text-right">Thành tiền</th>
+                                      <th className="px-3 py-2 text-right">Tổng hoàn</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-zinc-800">
-                                    {inv.items.map((it, i) => (
-                                      <tr key={i} className="bg-zinc-900">
-                                        <td className="px-3 py-2 font-mono text-xs text-blue-400 font-bold">{it.product.sku}</td>
-                                        <td className="px-3 py-2">
-                                          <p className="font-semibold text-amber-400">{it.product.name}</p>
-                                          {it.product.brand && <p className="text-[10px] text-zinc-500">{it.product.brand}</p>}
-                                        </td>
-                                        <td className="px-3 py-2 text-center font-bold text-amber-300">{it.quantity}</td>
-                                        <td className="px-3 py-2 text-right font-mono text-zinc-400">{fmt(it.product.sellingPrice)}</td>
-                                        <td className="px-3 py-2 text-right font-mono font-bold text-amber-400">{fmt(it.product.sellingPrice * it.quantity)}</td>
+                                    {ro.items.map((it, j) => (
+                                      <tr key={j} className="bg-zinc-900">
+                                        <td className="px-3 py-2 font-mono text-xs text-blue-400 font-bold">{it.sku}</td>
+                                        <td className="px-3 py-2 font-semibold text-amber-400 text-xs">{it.productName}</td>
+                                        <td className="px-3 py-2 text-center font-bold text-teal-300">{it.quantity}</td>
+                                        <td className="px-3 py-2 text-right font-mono text-zinc-400">{fmt(it.unitPrice)}</td>
+                                        <td className="px-3 py-2 text-right font-mono font-bold text-rose-400">{fmt(it.quantity * it.unitPrice)}</td>
                                       </tr>
                                     ))}
                                   </tbody>
                                 </table>
                               </div>
+                              {ro.notes && <p className="text-xs text-zinc-400 italic mt-3">{ro.notes}</p>}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
 
-                              {/* Totals */}
-                              <div className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 space-y-1.5 text-sm">
-                                <div className="flex justify-between text-zinc-400">
-                                  <span>Tổng tiền hàng</span>
-                                  <span className="font-mono font-bold text-amber-400">{fmt(inv.totalAmount)}</span>
+        {/* ── ALL / ADJUSTED view ── */}
+        {viewMode !== 'returns' && (() => {
+          const rows = viewMode === 'all' ? unifiedList : filtered.map(data => ({ kind: 'invoice' as const, data }));
+          const colSpan = viewMode === 'all' ? 10 : 9;
+          return rows.length === 0 ? (
+            <div className="p-12 text-center text-zinc-500">
+              <FileText className="w-10 h-10 mx-auto stroke-1 mb-2" />
+              <p className="text-xs font-semibold">Không tìm thấy hóa đơn</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-zinc-800 border-b border-zinc-700 text-zinc-400 text-xs font-bold uppercase tracking-wider">
+                    <th className="px-3 py-3 w-10 text-center">#</th>
+                    {viewMode === 'all' && <th className="px-3 py-3">Loại</th>}
+                    <th className="px-4 py-3 font-mono">Mã phiếu</th>
+                    <th className="px-4 py-3">Thời gian</th>
+                    <th className="px-4 py-3">Khách hàng</th>
+                    <th className="px-4 py-3 text-right">Tổng tiền</th>
+                    <th className="px-4 py-3 text-center">Hình thức</th>
+                    <th className="px-4 py-3 text-center">Trạng thái</th>
+                    <th className="px-4 py-3 text-center">T.Toán</th>
+                    <th className="px-4 py-3 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, idx) => {
+                    if (row.kind === 'return') {
+                      const ro = row.data as ReturnOrder;
+                      const isOpen = expandedReturnId === ro.id;
+                      return (
+                        <React.Fragment key={`ret-${ro.id}`}>
+                          <tr onClick={() => setExpandedReturnId(isOpen ? null : ro.id)}
+                            className={`border-b border-zinc-800 cursor-pointer transition-colors ${isOpen ? 'bg-teal-950/20' : 'hover:bg-zinc-800/60'}`}>
+                            <td className="px-3 py-3 text-center text-zinc-500 text-xs font-mono">{idx + 1}</td>
+                            <td className="px-3 py-3"><span className="px-2 py-0.5 bg-teal-900/40 text-teal-300 border border-teal-700 rounded-md text-[10px] font-bold">Trả hàng</span></td>
+                            <td className="px-4 py-3 font-mono font-bold text-teal-400">{ro.id}</td>
+                            <td className="px-4 py-3 text-zinc-400 text-xs font-mono whitespace-nowrap">
+                              {new Date(ro.timestamp).toLocaleDateString('vi-VN')}{' '}
+                              {new Date(ro.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td className="px-4 py-3 text-zinc-400 text-xs">← <span className="font-mono text-amber-400">{ro.invoiceId}</span></td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-rose-400 whitespace-nowrap">-{fmt(ro.totalRefund)}</td>
+                            <td className="px-4 py-3 text-center text-zinc-600">—</td>
+                            <td className="px-4 py-3 text-center"><span className="px-2 py-0.5 bg-teal-900/40 text-teal-300 border border-teal-700 rounded-md text-[10px] font-bold">Đã hoàn</span></td>
+                            <td className="px-4 py-3 text-center text-zinc-600">—</td>
+                            <td className="px-4 py-3">
+                              <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${isOpen ? 'rotate-180 text-teal-400' : ''}`} />
+                            </td>
+                          </tr>
+                          {isOpen && (
+                            <tr className="bg-teal-950/10 border-b border-zinc-800">
+                              <td colSpan={colSpan} className="px-5 py-4" onClick={e => e.stopPropagation()}>
+                                <div className="overflow-x-auto rounded-xl border border-zinc-700">
+                                  <table className="w-full text-sm text-left">
+                                    <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                                      <tr>
+                                        <th className="px-3 py-2">Mã hàng</th><th className="px-3 py-2">Tên hàng</th>
+                                        <th className="px-3 py-2 text-center">SL trả</th><th className="px-3 py-2 text-right">Đơn giá</th><th className="px-3 py-2 text-right">Tổng hoàn</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-800">
+                                      {ro.items.map((it, j) => (
+                                        <tr key={j} className="bg-zinc-900">
+                                          <td className="px-3 py-2 font-mono text-xs text-blue-400 font-bold">{it.sku}</td>
+                                          <td className="px-3 py-2 font-semibold text-amber-400 text-xs">{it.productName}</td>
+                                          <td className="px-3 py-2 text-center font-bold text-teal-300">{it.quantity}</td>
+                                          <td className="px-3 py-2 text-right font-mono text-zinc-400">{fmt(it.unitPrice)}</td>
+                                          <td className="px-3 py-2 text-right font-mono font-bold text-rose-400">{fmt(it.quantity * it.unitPrice)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
                                 </div>
-                                {inv.discountAmount > 0 && (
-                                  <div className="flex justify-between text-zinc-400">
-                                    <span>Giảm giá ({inv.discountPercent}%)</span>
-                                    <span className="font-mono text-emerald-400 font-bold">-{fmt(inv.discountAmount)}</span>
-                                  </div>
-                                )}
-                                <div className="flex justify-between border-t border-zinc-700 pt-1.5">
-                                  <span className="font-bold text-amber-300">Khách trả</span>
-                                  <span className="font-mono font-extrabold text-blue-400 text-base">{fmt(inv.finalAmount)}</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-xs text-zinc-400">
-                                  {inv.paymentMethod === 'CASH'
-                                    ? <Banknote className="w-3.5 h-3.5 text-emerald-400" />
-                                    : inv.paymentMethod === 'QR'
-                                    ? <QrCode className="w-3.5 h-3.5 text-blue-400" />
-                                    : <CreditCard className="w-3.5 h-3.5 text-amber-400" />}
-                                  <span>{PM_LABEL[inv.paymentMethod]}</span>
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-400 ml-auto" />
-                                  <span className="text-emerald-400 font-semibold">Đã thanh toán</span>
-                                </div>
-                              </div>
+                                {ro.notes && <p className="text-xs text-zinc-400 italic mt-3">{ro.notes}</p>}
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    }
 
-                              {/* Notes */}
-                              {noteEditId === inv.id ? (
-                                <div className="space-y-2">
-                                  <textarea rows={2} value={noteVal} onChange={e => setNoteVal(e.target.value)}
-                                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 text-amber-400 placeholder:text-zinc-500 rounded-lg text-sm focus:outline-none focus:border-amber-500 resize-none"
-                                    placeholder="Ghi chú..." />
-                                  {rowError && <p className="text-xs text-rose-400">{rowError}</p>}
-                                  <div className="flex gap-2">
-                                    <button onClick={() => setNoteEditId(null)}
-                                      className="px-3 py-1 border border-zinc-600 text-zinc-400 hover:text-amber-400 rounded-lg text-xs font-bold cursor-pointer">Hủy</button>
-                                    <button onClick={() => saveNote(inv)} disabled={noteSaving}
-                                      className="px-3 py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-black rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1">
-                                      <Check className="w-3 h-3" /> {noteSaving ? 'Lưu...' : 'Lưu ghi chú'}
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : inv.notes ? (
-                                <div className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 flex items-start justify-between gap-2">
-                                  <span className="text-xs text-zinc-400 italic">{inv.notes}</span>
-                                  {!cancelled && (
-                                    <button onClick={() => { setNoteEditId(inv.id); setNoteVal(inv.notes ?? ''); setRowError(''); }}
-                                      className="text-zinc-500 hover:text-amber-400 cursor-pointer shrink-0">
-                                      <Pencil className="w-3 h-3" />
-                                    </button>
-                                  )}
-                                </div>
-                              ) : !cancelled ? (
-                                <button onClick={() => { setNoteEditId(inv.id); setNoteVal(''); setRowError(''); }}
-                                  className="text-xs text-zinc-500 hover:text-amber-400 cursor-pointer flex items-center gap-1">
-                                  <Pencil className="w-3 h-3" /> Thêm ghi chú
-                                </button>
-                              ) : null}
-
-
-                              {/* Actions */}
-                              <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-800">
-                                {!cancelled && (
-                                  <>
-                                    <button onClick={() => openEdit(inv)}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-black text-xs font-bold rounded-lg cursor-pointer transition">
-                                      <Pencil className="w-3.5 h-3.5" /> Sửa hóa đơn
-                                    </button>
-                                    <button onClick={() => openReturn(inv)}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-900/40 hover:bg-teal-900/60 text-teal-400 border border-teal-700 text-xs font-bold rounded-lg cursor-pointer transition">
-                                      <RotateCcw className="w-3.5 h-3.5" /> Trả hàng
-                                    </button>
-                                  </>
-                                )}
-                                <button onClick={() => onPrintInvoice(inv)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded-lg cursor-pointer transition">
-                                  <Printer className="w-3.5 h-3.5" /> In hóa đơn
-                                </button>
-                              </div>
-                            </div>
+                    // invoice row
+                    const inv = row.data as Invoice;
+                    const isOpen = expandedId === inv.id;
+                    const cancelled = isCancelled(inv);
+                    return (
+                      <React.Fragment key={`inv-${inv.id}`}>
+                        <tr
+                          onClick={() => { setExpandedId(isOpen ? null : inv.id); setRowError(''); setNoteEditId(null); }}
+                          className={`border-b border-zinc-800 cursor-pointer transition-colors ${isOpen ? 'bg-amber-950/20' : 'hover:bg-zinc-800/60'} ${cancelled ? 'opacity-50' : ''}`}>
+                          <td className="px-3 py-3 text-center text-zinc-500 text-xs font-mono">{idx + 1}</td>
+                          {viewMode === 'all' && (
+                            <td className="px-3 py-3">
+                              {inv.isAdjusted
+                                ? <span className="px-2 py-0.5 bg-amber-900/40 text-amber-300 border border-amber-700 rounded-md text-[10px] font-bold">Điều chỉnh</span>
+                                : <span className="px-2 py-0.5 bg-blue-900/40 text-blue-300 border border-blue-700 rounded-md text-[10px] font-bold">Hóa đơn</span>}
+                            </td>
+                          )}
+                          <td className="px-4 py-3 font-mono font-bold text-amber-400">{inv.id}</td>
+                          <td className="px-4 py-3 text-zinc-400 text-xs font-mono whitespace-nowrap">
+                            {new Date(inv.timestamp).toLocaleDateString('vi-VN')}{' '}
+                            {new Date(inv.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="px-4 py-3">
+                            {inv.customerName
+                              ? <><p className="font-semibold text-amber-300">{inv.customerName}</p>
+                                  {inv.customerPhone && <p className="text-[10px] text-zinc-500 font-mono">{inv.customerPhone}</p>}</>
+                              : <span className="text-zinc-500 text-xs">Khách lẻ</span>}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 whitespace-nowrap">
+                            {fmt(inv.finalAmount)}
+                            {inv.discountAmount > 0 && <span className="block text-[10px] text-emerald-400 font-normal">-{fmt(inv.discountAmount)}</span>}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${PM_COLOR[inv.paymentMethod] ?? ''}`}>
+                              {PM_LABEL[inv.paymentMethod] ?? inv.paymentMethod}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {cancelled
+                              ? <span className="px-2 py-0.5 bg-rose-900/40 text-rose-300 border border-rose-700 rounded-md text-[10px] font-bold">Đã hủy</span>
+                              : <span className="px-2 py-0.5 bg-emerald-900/40 text-emerald-300 border border-emerald-700 rounded-md text-[10px] font-bold">Hoàn thành</span>}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {!cancelled && (
+                              <button onClick={e => { e.stopPropagation(); onUpdateInvoice({ ...inv, paymentStatus: (inv.paymentStatus ?? 'paid') === 'paid' ? 'unpaid' : 'paid' }); }}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border cursor-pointer transition ${(inv.paymentStatus ?? 'paid') === 'paid' ? 'bg-emerald-900/40 text-emerald-300 border-emerald-700' : 'bg-amber-900/40 text-amber-300 border-amber-700'}`}>
+                                {(inv.paymentStatus ?? 'paid') === 'paid' ? 'Đã TT' : 'Chưa TT'}
+                              </button>
+                            )}
+                            {cancelled && <span className="text-zinc-600 text-xs">—</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${isOpen ? 'rotate-180 text-amber-400' : ''}`} />
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                        {isOpen && (
+                          <tr className="bg-amber-950/10 border-b border-zinc-800">
+                            <td colSpan={colSpan} className="px-5 py-4">
+                              <div className="space-y-4" onClick={e => e.stopPropagation()}>
+                                <div className="overflow-x-auto rounded-xl border border-zinc-700">
+                                  <table className="w-full text-sm text-left">
+                                    <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                                      <tr>
+                                        <th className="px-3 py-2">Mã hàng</th><th className="px-3 py-2">Tên hàng</th>
+                                        <th className="px-3 py-2 text-center">SL</th><th className="px-3 py-2 text-right">Đơn giá</th><th className="px-3 py-2 text-right">Thành tiền</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-800">
+                                      {inv.items.map((it, i) => (
+                                        <tr key={i} className="bg-zinc-900">
+                                          <td className="px-3 py-2 font-mono text-xs text-blue-400 font-bold">{it.product.sku}</td>
+                                          <td className="px-3 py-2">
+                                            <p className="font-semibold text-amber-400">{it.product.name}</p>
+                                            {it.product.brand && <p className="text-[10px] text-zinc-500">{it.product.brand}</p>}
+                                          </td>
+                                          <td className="px-3 py-2 text-center font-bold text-amber-300">{it.quantity}</td>
+                                          <td className="px-3 py-2 text-right font-mono text-zinc-400">{fmt(it.product.sellingPrice)}</td>
+                                          <td className="px-3 py-2 text-right font-mono font-bold text-amber-400">{fmt(it.product.sellingPrice * it.quantity)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <div className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 space-y-1.5 text-sm">
+                                  <div className="flex justify-between text-zinc-400">
+                                    <span>Tổng tiền hàng</span>
+                                    <span className="font-mono font-bold text-amber-400">{fmt(inv.totalAmount)}</span>
+                                  </div>
+                                  {inv.discountAmount > 0 && (
+                                    <div className="flex justify-between text-zinc-400">
+                                      <span>Giảm giá ({inv.discountPercent}%)</span>
+                                      <span className="font-mono text-emerald-400 font-bold">-{fmt(inv.discountAmount)}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between border-t border-zinc-700 pt-1.5">
+                                    <span className="font-bold text-amber-300">Khách trả</span>
+                                    <span className="font-mono font-extrabold text-blue-400 text-base">{fmt(inv.finalAmount)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-zinc-400">
+                                    {inv.paymentMethod === 'CASH' ? <Banknote className="w-3.5 h-3.5 text-emerald-400" /> : inv.paymentMethod === 'QR' ? <QrCode className="w-3.5 h-3.5 text-blue-400" /> : <CreditCard className="w-3.5 h-3.5 text-amber-400" />}
+                                    <span>{PM_LABEL[inv.paymentMethod]}</span>
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-400 ml-auto" />
+                                    <span className="text-emerald-400 font-semibold">Đã thanh toán</span>
+                                  </div>
+                                </div>
+                                {noteEditId === inv.id ? (
+                                  <div className="space-y-2">
+                                    <textarea rows={2} value={noteVal} onChange={e => setNoteVal(e.target.value)}
+                                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 text-amber-400 placeholder:text-zinc-500 rounded-lg text-sm focus:outline-none focus:border-amber-500 resize-none"
+                                      placeholder="Ghi chú..." />
+                                    {rowError && <p className="text-xs text-rose-400">{rowError}</p>}
+                                    <div className="flex gap-2">
+                                      <button onClick={() => setNoteEditId(null)} className="px-3 py-1 border border-zinc-600 text-zinc-400 hover:text-amber-400 rounded-lg text-xs font-bold cursor-pointer">Hủy</button>
+                                      <button onClick={() => saveNote(inv)} disabled={noteSaving} className="px-3 py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-black rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1">
+                                        <Check className="w-3 h-3" /> {noteSaving ? 'Lưu...' : 'Lưu ghi chú'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : inv.notes ? (
+                                  <div className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 flex items-start justify-between gap-2">
+                                    <span className="text-xs text-zinc-400 italic">{inv.notes}</span>
+                                    {!cancelled && (
+                                      <button onClick={() => { setNoteEditId(inv.id); setNoteVal(inv.notes ?? ''); setRowError(''); }} className="text-zinc-500 hover:text-amber-400 cursor-pointer shrink-0">
+                                        <Pencil className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : !cancelled ? (
+                                  <button onClick={() => { setNoteEditId(inv.id); setNoteVal(''); setRowError(''); }} className="text-xs text-zinc-500 hover:text-amber-400 cursor-pointer flex items-center gap-1">
+                                    <Pencil className="w-3 h-3" /> Thêm ghi chú
+                                  </button>
+                                ) : null}
+                                <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-800">
+                                  {!cancelled && (
+                                    <>
+                                      <button onClick={() => openEdit(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-black text-xs font-bold rounded-lg cursor-pointer transition">
+                                        <Pencil className="w-3.5 h-3.5" /> Sửa hóa đơn
+                                      </button>
+                                      <button onClick={() => openReturn(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-900/40 hover:bg-teal-900/60 text-teal-400 border border-teal-700 text-xs font-bold rounded-lg cursor-pointer transition">
+                                        <RotateCcw className="w-3.5 h-3.5" /> Trả hàng
+                                      </button>
+                                    </>
+                                  )}
+                                  <button onClick={() => onPrintInvoice(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded-lg cursor-pointer transition">
+                                    <Printer className="w-3.5 h-3.5" /> In hóa đơn
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
+
       </div>
 
       {/* Edit Invoice Modal */}
@@ -716,65 +848,6 @@ export default function Invoices({
                   className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-black rounded-lg text-sm font-bold cursor-pointer">
                   {editSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
                 </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Return Orders List Modal */}
-      <AnimatePresence>
-        {showReturnOrders && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-            onClick={() => setShowReturnOrders(false)}>
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl w-full max-w-5xl my-4"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between p-5 border-b border-zinc-700">
-                <h3 className="font-bold text-teal-400 flex items-center gap-2">
-                  <RotateCcw className="w-4 h-4" />
-                  Danh sách phiếu trả hàng ({returnsInRange.length})
-                </h3>
-                <button onClick={() => setShowReturnOrders(false)} className="text-zinc-500 hover:text-amber-400 cursor-pointer">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="overflow-auto max-h-[70vh]">
-                {returnsInRange.length === 0 ? (
-                  <div className="p-12 text-center text-zinc-500">
-                    <RotateCcw className="w-10 h-10 mx-auto stroke-1 mb-2" />
-                    <p className="text-xs font-semibold">Không có phiếu trả hàng</p>
-                  </div>
-                ) : (
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-zinc-900 border-b border-zinc-700 text-zinc-400 text-xs font-bold uppercase tracking-wider sticky top-0">
-                      <tr>
-                        <th className="px-3 py-3 w-10 text-center">STT</th>
-                        <th className="px-4 py-3 font-mono">Mã phiếu TH</th>
-                        <th className="px-4 py-3">Thời gian</th>
-                        <th className="px-4 py-3">Hóa đơn gốc</th>
-                        <th className="px-4 py-3">Sản phẩm</th>
-                        <th className="px-4 py-3 text-right">Tổng hoàn</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800">
-                      {[...returnsInRange].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map((ro, i) => (
-                        <tr key={ro.id} className="hover:bg-zinc-700/30 transition-colors">
-                          <td className="px-3 py-3 text-center text-zinc-500 text-xs font-mono">{i + 1}</td>
-                          <td className="px-4 py-3 font-mono font-bold text-teal-400">{ro.id}</td>
-                          <td className="px-4 py-3 text-zinc-400 text-xs font-mono whitespace-nowrap">
-                            {new Date(ro.timestamp).toLocaleString('vi-VN')}
-                          </td>
-                          <td className="px-4 py-3 font-mono text-zinc-400 text-xs">{ro.invoiceId}</td>
-                          <td className="px-4 py-3 text-zinc-300 text-xs">{ro.items.length} sản phẩm</td>
-                          <td className="px-4 py-3 text-right font-mono font-bold text-rose-400">{fmt(ro.totalRefund)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
               </div>
             </motion.div>
           </div>
