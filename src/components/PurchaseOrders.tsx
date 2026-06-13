@@ -724,6 +724,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                         <th className="px-3 py-2.5 text-right">Giá bán</th>
                         <th className="px-3 py-2.5 text-right w-28">Số lượng</th>
                         <th className="px-3 py-2.5 text-right w-36">Đơn giá</th>
+                        <th className="px-3 py-2.5 text-right w-28">SL cuối</th>
                         <th className="px-3 py-2.5 text-right">Thành tiền</th>
                       </tr>
                     </thead>
@@ -755,13 +756,20 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                                 onChange={e => setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, unitCost: Number(e.target.value) || 0 } : it))}
                                 className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm text-right font-mono focus:outline-none focus:border-blue-500 bg-white" />
                             </td>
+                            <td className="px-3 py-2 text-right">
+                              {prod ? (
+                                <span className={`font-mono font-bold text-sm ${draftType === 'import' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                  {draftType === 'import' ? prod.stock + item.quantity : prod.stock - item.quantity}
+                                </span>
+                              ) : <span className="text-slate-400">—</span>}
+                            </td>
                             <td className="px-3 py-2 text-right font-mono font-bold text-blue-700">{formatVND(item.quantity * item.unitCost)}</td>
                           </tr>
                         );
                       })}
                       {draftItems.length === 0 && (
                         <tr>
-                          <td colSpan={11} className="px-3 py-16 text-center text-slate-400">
+                          <td colSpan={12} className="px-3 py-16 text-center text-slate-400">
                             <Search className="w-10 h-10 mx-auto mb-3 opacity-20" />
                             <p className="text-sm">Tìm kiếm và chọn sản phẩm ở thanh tìm kiếm phía trên</p>
                             <p className="text-xs text-slate-300 mt-1">Nhấn Enter để thêm nhanh sản phẩm đầu tiên trong gợi ý</p>
