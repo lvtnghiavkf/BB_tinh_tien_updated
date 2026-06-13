@@ -272,3 +272,23 @@ alter table public.return_order_items enable row level security;
 
 create policy "public_all_return_orders"      on public.return_orders      for all using (true) with check (true);
 create policy "public_all_return_order_items" on public.return_order_items for all using (true) with check (true);
+
+-- ── Bảng 13: Chi phí phát sinh & Thuế ────────────────────────
+create table if not exists public.expenses (
+  id           text primary key,
+  code         text,
+  expense_type text not null default 'expense',  -- 'expense' | 'tax'
+  content      text not null,
+  amount       bigint not null default 0,
+  notes        text,
+  date         date not null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+-- Nếu bảng đã tồn tại, thêm các cột mới (an toàn):
+alter table public.expenses add column if not exists code         text;
+alter table public.expenses add column if not exists expense_type text not null default 'expense';
+
+alter table public.expenses enable row level security;
+create policy "public_all_expenses" on public.expenses for all using (true) with check (true);

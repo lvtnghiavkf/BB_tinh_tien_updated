@@ -61,6 +61,8 @@ export default function Invoices({
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
 
+  const [showReturnOrders, setShowReturnOrders] = useState(false);
+
   const [timeFilter, setTimeFilter] = useState<'1' | '3' | '7' | '30' | 'custom'>('30');
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
@@ -95,20 +97,21 @@ export default function Invoices({
 
   const rangeList = useMemo(() => sorted.filter(inRange), [sorted, dateFrom, dateTo]);
 
+  const returnsInRange = useMemo(() => returnOrders.filter(ro => {
+    if (!dateFrom) return true;
+    const t = new Date(ro.timestamp).getTime();
+    return t >= dateFrom.getTime() && t <= (dateTo ?? new Date()).getTime();
+  }), [returnOrders, dateFrom, dateTo]);
+
   const stats = useMemo(() => {
-    const all      = rangeList.filter(i => (i.status ?? 'completed') !== 'cancelled');
+    const all      = rangeList.filter(i => (i.status ?? 'completed') !== 'cancelled' && !i.isAdjusted);
     const adjusted = rangeList.filter(i => i.isAdjusted);
-    const returnsInRange = returnOrders.filter(ro => {
-      if (!dateFrom) return true;
-      const t = new Date(ro.timestamp).getTime();
-      return t >= dateFrom.getTime() && t <= (dateTo ?? new Date()).getTime();
-    });
     return {
       all:     { count: all.length,              amount: all.reduce((s, i) => s + i.finalAmount, 0) },
       returns: { count: returnsInRange.length,   amount: returnsInRange.reduce((s, ro) => s + ro.totalRefund, 0) },
       adjusted:{ count: adjusted.length,         amount: adjusted.reduce((s, i) => s + i.finalAmount, 0) },
     };
-  }, [rangeList, returnOrders, dateFrom, dateTo]);
+  }, [rangeList, returnsInRange]);
 
   const filtered = useMemo(() => {
     let list = rangeList;
@@ -295,14 +298,15 @@ export default function Invoices({
         </button>
 
         {/* Phiếu trả hàng */}
-        <div className="text-left p-4 rounded-xl border border-zinc-700 bg-zinc-900">
+        <button type="button" onClick={() => setShowReturnOrders(true)}
+          className="text-left p-4 rounded-xl border border-zinc-700 bg-zinc-900 hover:border-teal-600 transition cursor-pointer">
           <div className="flex items-center gap-2 mb-2">
             <RotateCcw className="w-4 h-4 text-teal-400" />
             <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Phiếu trả hàng</span>
           </div>
           <p className="text-2xl font-extrabold font-mono text-teal-300">{stats.returns.count}</p>
           <p className="text-xs text-zinc-500 font-mono mt-0.5">{fmtShort(stats.returns.amount)} ₫</p>
-        </div>
+        </button>
 
         {/* Hóa đơn điều chỉnh */}
         <button type="button" onClick={() => { setStatusFilter(''); setShowAdjustedOnly(true); }}
@@ -712,6 +716,65 @@ export default function Invoices({
                   className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-black rounded-lg text-sm font-bold cursor-pointer">
                   {editSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Return Orders List Modal */}
+      <AnimatePresence>
+        {showReturnOrders && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+            onClick={() => setShowReturnOrders(false)}>
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl w-full max-w-5xl my-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 border-b border-zinc-700">
+                <h3 className="font-bold text-teal-400 flex items-center gap-2">
+                  <RotateCcw className="w-4 h-4" />
+                  Danh sách phiếu trả hàng ({returnsInRange.length})
+                </h3>
+                <button onClick={() => setShowReturnOrders(false)} className="text-zinc-500 hover:text-amber-400 cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="overflow-auto max-h-[70vh]">
+                {returnsInRange.length === 0 ? (
+                  <div className="p-12 text-center text-zinc-500">
+                    <RotateCcw className="w-10 h-10 mx-auto stroke-1 mb-2" />
+                    <p className="text-xs font-semibold">Không có phiếu trả hàng</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-zinc-900 border-b border-zinc-700 text-zinc-400 text-xs font-bold uppercase tracking-wider sticky top-0">
+                      <tr>
+                        <th className="px-3 py-3 w-10 text-center">STT</th>
+                        <th className="px-4 py-3 font-mono">Mã phiếu TH</th>
+                        <th className="px-4 py-3">Thời gian</th>
+                        <th className="px-4 py-3">Hóa đơn gốc</th>
+                        <th className="px-4 py-3">Sản phẩm</th>
+                        <th className="px-4 py-3 text-right">Tổng hoàn</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800">
+                      {[...returnsInRange].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map((ro, i) => (
+                        <tr key={ro.id} className="hover:bg-zinc-700/30 transition-colors">
+                          <td className="px-3 py-3 text-center text-zinc-500 text-xs font-mono">{i + 1}</td>
+                          <td className="px-4 py-3 font-mono font-bold text-teal-400">{ro.id}</td>
+                          <td className="px-4 py-3 text-zinc-400 text-xs font-mono whitespace-nowrap">
+                            {new Date(ro.timestamp).toLocaleString('vi-VN')}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-zinc-400 text-xs">{ro.invoiceId}</td>
+                          <td className="px-4 py-3 text-zinc-300 text-xs">{ro.items.length} sản phẩm</td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-rose-400">{fmt(ro.totalRefund)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </motion.div>
           </div>

@@ -4,7 +4,8 @@ import {
   TrendingUp, Calendar,
   CircleDollarSign, Search, ShoppingBag, Percent, Receipt,
   ArrowDownToLine, Banknote, Wallet, Users, Plus, Pencil, Trash2,
-  X, Download, Upload, AlertCircle, Building2, History
+  X, Download, Upload, AlertCircle, Building2, History,
+  Tag, ChevronDown, ChevronUp, CheckCheck,
 } from 'lucide-react';
 import {
   fetchPurchaseOrders, updatePurchaseOrder,
@@ -113,11 +114,19 @@ export default function Reports({ invoices, products, isManager = false, onSelec
   const [expensesLoading, setExpensesLoading] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
-  const [expenseForm, setExpenseForm] = useState({ content: '', amount: '', date: '', notes: '' });
+  const [expenseForm, setExpenseForm] = useState({ content: '', amount: '', date: '', notes: '', expenseType: 'expense' as 'expense' | 'tax' });
   const [expenseSaving, setExpenseSaving] = useState(false);
   const [expenseSaveError, setExpenseSaveError] = useState('');
   const [deleteExpenseConfirm, setDeleteExpenseConfirm] = useState<string | null>(null);
-  const [tax, setTax] = useState(0);
+  const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
+  const [showDebtorsModal, setShowDebtorsModal] = useState(false);
+  const [showUnpaidSalaryModal, setShowUnpaidSalaryModal] = useState(false);
+  const [payingAllPartner, setPayingAllPartner] = useState<{ id: string; name: string; remaining: number; orders: PurchaseOrder[] } | null>(null);
+  const [payingAllConfirmed, setPayingAllConfirmed] = useState(false);
+  const [payingAllSaving, setPayingAllSaving] = useState(false);
+  const [payingAllCash, setPayingAllCash] = useState(false);
+  const [profitChartView, setProfitChartView] = useState<'day' | 'month' | 'year'>('month');
+  const [profitChartYear, setProfitChartYear] = useState(new Date().getFullYear());
   const xlsxInputRef = useRef<HTMLInputElement>(null);
 
   // Date range
@@ -298,8 +307,43 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     [salaryEntries, dateFrom, dateTo]);
 
   const totalSalary = useMemo(() => salaryInRange.reduce((s, e) => s + e.appliedAmount, 0), [salaryInRange]);
-  const totalExpenses = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
-  const netProfit = stats.profit - totalSalary - totalExpenses - tax;
+  const totalExpenses = useMemo(() => expenses.filter(e => e.expenseType !== 'tax').reduce((s, e) => s + e.amount, 0), [expenses]);
+  const totalTax = useMemo(() => expenses.filter(e => e.expenseType === 'tax').reduce((s, e) => s + e.amount, 0), [expenses]);
+  const netProfit = stats.profit - totalSalary - totalExpenses - totalTax;
+
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    invoices.forEach(inv => years.add(new Date(inv.timestamp).getFullYear()));
+    return Array.from(years).sort((a, b) => a - b);
+  }, [invoices]);
+
+  const monthlyChartData = useMemo(() => {
+    const months = Array.from({ length: 12 }, (_, i) => ({ label: `T${i + 1}`, revenue: 0, profit: 0, transactions: 0 }));
+    invoices.forEach(inv => {
+      const d = new Date(inv.timestamp);
+      if (d.getFullYear() !== profitChartYear || (inv.status ?? 'completed') === 'cancelled') return;
+      const m = d.getMonth();
+      let cost = 0; inv.items.forEach(it => { cost += it.product.costPrice * it.quantity; });
+      months[m].revenue += inv.finalAmount;
+      months[m].profit += inv.finalAmount - cost;
+      months[m].transactions += 1;
+    });
+    return months;
+  }, [invoices, profitChartYear]);
+
+  const yearlyChartData = useMemo(() => {
+    const yearMap: Record<string, { revenue: number; profit: number; transactions: number }> = {};
+    invoices.forEach(inv => {
+      if ((inv.status ?? 'completed') === 'cancelled') return;
+      const year = String(new Date(inv.timestamp).getFullYear());
+      if (!yearMap[year]) yearMap[year] = { revenue: 0, profit: 0, transactions: 0 };
+      let cost = 0; inv.items.forEach(it => { cost += it.product.costPrice * it.quantity; });
+      yearMap[year].revenue += inv.finalAmount;
+      yearMap[year].profit += inv.finalAmount - cost;
+      yearMap[year].transactions += 1;
+    });
+    return Object.entries(yearMap).sort(([a], [b]) => Number(a) - Number(b)).map(([label, d]) => ({ label, ...d }));
+  }, [invoices]);
 
   const filteredSalary = useMemo(() => {
     if (!salarySearch) return salaryEntries;
@@ -414,15 +458,15 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     setDeleteSalaryConfirm(null);
   }
 
-  function openAddExpense() {
+  function openAddExpense(type: 'expense' | 'tax' = 'expense') {
     setEditingExpenseId(null);
-    setExpenseForm({ content: '', amount: '', date: toDateStr(new Date()), notes: '' });
+    setExpenseForm({ content: '', amount: '', date: toDateStr(new Date()), notes: '', expenseType: type });
     setShowExpenseForm(true);
     setExpenseSaveError('');
   }
   function openEditExpense(e: Expense) {
     setEditingExpenseId(e.id);
-    setExpenseForm({ content: e.content, amount: String(e.amount), date: e.date, notes: e.notes ?? '' });
+    setExpenseForm({ content: e.content, amount: String(e.amount), date: e.date, notes: e.notes ?? '', expenseType: e.expenseType ?? 'expense' });
     setShowExpenseForm(true);
     setExpenseSaveError('');
   }
@@ -433,11 +477,13 @@ export default function Reports({ invoices, products, isManager = false, onSelec
     try {
       if (editingExpenseId) {
         const existing = expenses.find(e => e.id === editingExpenseId)!;
-        const updated: Expense = { ...existing, content: expenseForm.content.trim(), amount: Number(expenseForm.amount), date: expenseForm.date, notes: expenseForm.notes.trim() || undefined };
+        const updated: Expense = { ...existing, content: expenseForm.content.trim(), amount: Number(expenseForm.amount), date: expenseForm.date, notes: expenseForm.notes.trim() || undefined, expenseType: expenseForm.expenseType };
         await updateExpense(updated);
         setExpenses(prev => prev.map(e => e.id === editingExpenseId ? updated : e));
       } else {
-        const newExp: Expense = { id: `exp_${Date.now()}`, content: expenseForm.content.trim(), amount: Number(expenseForm.amount), date: expenseForm.date, notes: expenseForm.notes.trim() || undefined, createdAt: new Date().toISOString() };
+        const suffix = String(Date.now()).slice(-5);
+        const code = expenseForm.expenseType === 'tax' ? `TAX${suffix}` : `CP${suffix}`;
+        const newExp: Expense = { id: `exp_${Date.now()}`, code, expenseType: expenseForm.expenseType, content: expenseForm.content.trim(), amount: Number(expenseForm.amount), date: expenseForm.date, notes: expenseForm.notes.trim() || undefined, createdAt: new Date().toISOString() };
         await insertExpense(newExp);
         setExpenses(prev => [newExp, ...prev]);
       }
@@ -446,6 +492,38 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       setExpenseSaveError(err?.message ?? 'Lỗi khi lưu chi phí. Vui lòng thử lại.');
     } finally {
       setExpenseSaving(false);
+    }
+  }
+
+  async function handlePayAllPartner() {
+    if (!payingAllPartner) return;
+    setPayingAllSaving(true);
+    try {
+      const unpaidOrders = payingAllPartner.orders.filter(o => o.totalAmount - o.paidAmount > 0);
+      for (const o of unpaidOrders) {
+        const rem = o.totalAmount - o.paidAmount;
+        const updated = { ...o, paidAmount: o.totalAmount };
+        await updatePurchaseOrder(updated);
+        setPurchaseOrders(prev => prev.map(x => x.id === o.id ? updated : x));
+        const log: PaymentLog = {
+          id: `PL${Date.now()}_${o.id}`,
+          createdAt: new Date().toISOString(),
+          type: 'debt',
+          referenceId: o.id,
+          referenceName: payingAllPartner.name,
+          amount: rem,
+          paymentMethod: payingAllCash ? 'cash' : 'bank',
+          remaining: 0,
+          notes: `Thanh toán tất cả công nợ`,
+        };
+        try { await insertPaymentLog(log); setPaymentLogs(prev => [log, ...prev]); } catch (_) {}
+      }
+      setPayingAllPartner(null);
+      setPayingAllConfirmed(false);
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setPayingAllSaving(false);
     }
   }
   async function handleDeleteExpense(id: string) {
@@ -685,10 +763,10 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                   <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">TỔNG NỢ CÒN LẠI</p><p className={`text-xl font-extrabold font-mono mt-1 ${totalDebt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatVND(totalDebt)}</p></div>
                   <div className="p-3.5 bg-rose-900/30 text-rose-400 rounded-xl"><Banknote className="w-6 h-6" /></div>
                 </div>
-                <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
-                  <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">SỐ ĐỐI TÁC CÒN NỢ</p><p className="text-xl font-extrabold text-zinc-100 mt-1">{debtByPartner.filter(p => p.remaining > 0).length}</p></div>
+                <button onClick={() => setShowDebtorsModal(true)} className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between w-full text-left cursor-pointer hover:bg-zinc-700/50 transition">
+                  <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">SỐ ĐỐI TÁC CÒN NỢ</p><p className="text-xl font-extrabold text-amber-400 mt-1">{debtByPartner.filter(p => p.remaining > 0).length}</p><p className="text-[10px] text-zinc-500 mt-0.5">Bấm để xem danh sách →</p></div>
                   <div className="p-3.5 bg-amber-900/30 text-amber-400 rounded-xl"><Users className="w-6 h-6" /></div>
-                </div>
+                </button>
                 <button onClick={() => setShowDebtPaidHistory(true)} className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between w-full text-left cursor-pointer hover:bg-zinc-700/50 transition">
                   <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">TỔNG ĐÃ THANH TOÁN</p><p className="text-xl font-extrabold text-emerald-400 font-mono mt-1">{formatVND(debtByPartner.reduce((s, p) => s + p.paid, 0))}</p><p className="text-[10px] text-zinc-500 mt-0.5">Bấm để xem lịch sử →</p></div>
                   <div className="p-3.5 bg-emerald-900/30 text-emerald-400 rounded-xl"><TrendingUp className="w-6 h-6" /></div>
@@ -705,13 +783,24 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                 <div key={p.id} className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
                   <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-zinc-800/40 transition"
                     onClick={() => setExpandedPartnerId(expandedPartnerId === p.id ? null : p.id)}>
-                    <div>
-                      <p className="font-bold text-zinc-100">{p.partnerName}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-zinc-100">{p.partnerName}</p>
+                        <span className="text-[10px] bg-zinc-700 text-zinc-400 px-1.5 py-0.5 rounded font-mono">ĐỐI TÁC</span>
+                      </div>
                       <p className="text-xs text-zinc-400 mt-0.5">{p.orders.length} phiếu nhập · Tổng: {formatVND(p.total)} · Đã trả: {formatVND(p.paid)}</p>
                     </div>
-                    <div className="text-right shrink-0 ml-4">
-                      <p className={`font-bold font-mono ${p.remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{p.remaining > 0 ? formatVND(p.remaining) : 'Đã thanh toán đủ'}</p>
-                      {p.remaining > 0 && <p className="text-[10px] text-rose-500 mt-0.5">còn nợ</p>}
+                    <div className="flex items-center gap-3 shrink-0 ml-4">
+                      {p.remaining > 0 && (
+                        <button onClick={e => { e.stopPropagation(); setPayingAllPartner({ id: p.id, name: p.partnerName, remaining: p.remaining, orders: p.orders }); setPayingAllConfirmed(false); setPayingAllCash(false); }}
+                          className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer transition whitespace-nowrap flex items-center gap-1">
+                          <CheckCheck className="w-3.5 h-3.5" /> Thanh toán tất cả
+                        </button>
+                      )}
+                      <div className="text-right">
+                        <p className={`font-bold font-mono ${p.remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{p.remaining > 0 ? formatVND(p.remaining) : 'Đã thanh toán đủ'}</p>
+                        {p.remaining > 0 && <p className="text-[10px] text-rose-500 mt-0.5">còn nợ</p>}
+                      </div>
                     </div>
                   </div>
                   <AnimatePresence>
@@ -797,10 +886,10 @@ export default function Reports({ invoices, products, isManager = false, onSelec
               <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">TỔNG NỢ LƯƠNG</p><p className={`text-xl font-extrabold font-mono mt-1 ${salaryTotalRemaining > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{formatVND(salaryTotalRemaining)}</p></div>
               <div className="p-3.5 bg-rose-900/30 text-rose-400 rounded-xl"><Banknote className="w-6 h-6" /></div>
             </div>
-            <div className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
-              <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">SỐ NGƯỜI CHƯA TRẢ LƯƠNG</p><p className="text-xl font-extrabold text-amber-400 mt-1">{salaryUnpaidCount}</p></div>
+            <button onClick={() => setShowUnpaidSalaryModal(true)} className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between w-full text-left cursor-pointer hover:bg-zinc-700/50 transition">
+              <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">SỐ NGƯỜI CHƯA TRẢ LƯƠNG</p><p className="text-xl font-extrabold text-amber-400 mt-1">{salaryUnpaidCount}</p><p className="text-[10px] text-zinc-500 mt-0.5">Bấm để xem danh sách →</p></div>
               <div className="p-3.5 bg-amber-900/30 text-amber-400 rounded-xl"><Users className="w-6 h-6" /></div>
-            </div>
+            </button>
             <button onClick={() => setShowSalaryPaidHistory(true)} className="bg-zinc-800/50 p-5 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between w-full text-left cursor-pointer hover:bg-zinc-700/50 transition">
               <div><p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">TỔNG ĐÃ TRẢ LƯƠNG</p><p className="text-xl font-extrabold text-emerald-400 font-mono mt-1">{formatVND(salaryTotalPaid)}</p><p className="text-[10px] text-zinc-500 mt-0.5">Bấm để xem lịch sử →</p></div>
               <div className="p-3.5 bg-emerald-900/30 text-emerald-400 rounded-xl"><TrendingUp className="w-6 h-6" /></div>
@@ -992,6 +1081,63 @@ export default function Reports({ invoices, products, isManager = false, onSelec
       {/* ── PROFIT TAB ───────────────────────────────────── */}
       {reportType === 'profit' && (
         <div className="space-y-6">
+          {/* Profit chart with month/year toggle */}
+          <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-zinc-700">
+              <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><TrendingUp className="w-4 h-4 text-emerald-400" /> Biểu đồ lợi nhuận</h3>
+              <div className="flex items-center gap-2">
+                {profitChartView === 'month' && (
+                  <select value={profitChartYear} onChange={e => setProfitChartYear(Number(e.target.value))}
+                    className="bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none cursor-pointer">
+                    {(availableYears.length > 0 ? availableYears : [new Date().getFullYear()]).map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                )}
+                <div className="flex bg-zinc-900 border border-zinc-700 rounded-lg p-0.5">
+                  {(['month', 'year'] as const).map(v => (
+                    <button key={v} onClick={() => setProfitChartView(v)}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${profitChartView === v ? 'bg-emerald-700 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}>
+                      {v === 'month' ? 'Theo tháng' : 'Theo năm'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {(() => {
+              const cData = profitChartView === 'month' ? monthlyChartData : yearlyChartData;
+              if (cData.length === 0) return <div className="py-12 text-center text-zinc-500 text-sm">Không có dữ liệu</div>;
+              const maxVal = Math.max(...cData.map(d => Math.max(d.revenue, 1)));
+              const svgW = 560; const svgH = 180; const pT = 16; const pB = 28; const pL = 50; const pR = 16;
+              const barW = Math.max(8, Math.floor((svgW - pL - pR) / cData.length) - 4);
+              const barStep = (svgW - pL - pR) / cData.length;
+              return (
+                <div className="p-4">
+                  <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-44 overflow-visible">
+                    {[0, 0.25, 0.5, 0.75, 1].map(r => {
+                      const y = svgH - pB - r * (svgH - pT - pB);
+                      return <g key={r}><line x1={pL} y1={y} x2={svgW - pR} y2={y} stroke="#3f3f46" strokeWidth="1" strokeDasharray="4,3" /><text x={pL - 6} y={y + 4} fill="#71717a" fontSize="8" fontFamily="monospace" textAnchor="end">{Math.round(r * maxVal / 1000)}k</text></g>;
+                    })}
+                    {cData.map((d, i) => {
+                      const x = pL + i * barStep + barStep / 2;
+                      const rH = Math.max(2, (d.revenue / maxVal) * (svgH - pT - pB));
+                      const pH = d.profit >= 0 ? Math.max(1, (d.profit / maxVal) * (svgH - pT - pB)) : 0;
+                      return (
+                        <g key={d.label}>
+                          <rect x={x - barW / 2} y={svgH - pB - rH} width={barW} height={rH} fill="#3b82f6" opacity="0.7" rx="2" />
+                          <rect x={x - barW / 2 + 2} y={svgH - pB - pH} width={Math.max(barW - 4, 2)} height={pH} fill="#10b981" opacity="0.9" rx="2" />
+                          <text x={x} y={svgH - pB + 12} fill="#a1a1aa" fontSize="9" textAnchor="middle">{d.label}</text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                  <div className="flex items-center gap-4 text-[10px] text-zinc-500 mt-1 justify-center">
+                    <span className="flex items-center gap-1"><span className="w-3 h-2 bg-blue-500 rounded inline-block opacity-70"></span> Doanh thu</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-2 bg-emerald-500 rounded inline-block"></span> Lợi nhuận</span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           {/* P&L Summary */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
@@ -999,8 +1145,8 @@ export default function Reports({ invoices, products, isManager = false, onSelec
               { label: 'GIÁ VỐN NHẬP HÀNG', value: stats.cost, color: 'text-zinc-300', bg: 'bg-zinc-700', icon: <ArrowDownToLine className="w-5 h-5" />, sub: 'Chi phí nhập hàng' },
               { label: 'LỢI NHUẬN GỘP', value: stats.profit, color: stats.profit >= 0 ? 'text-emerald-400' : 'text-rose-400', bg: stats.profit >= 0 ? 'bg-emerald-900/30' : 'bg-rose-900/30', icon: <TrendingUp className="w-5 h-5" />, sub: 'Doanh thu − Giá vốn' },
               { label: 'TỔNG LƯƠNG', value: totalSalary, color: 'text-amber-400', bg: 'bg-amber-900/30', icon: <Users className="w-5 h-5" />, sub: 'Trong kỳ' },
-              { label: 'CHI PHÍ PHÁT SINH', value: totalExpenses, color: 'text-rose-400', bg: 'bg-rose-900/30', icon: <Receipt className="w-5 h-5" />, sub: `${expenses.length} khoản` },
-              { label: 'LỢI NHUẬN RÒNG', value: netProfit, color: netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400', bg: netProfit >= 0 ? 'bg-emerald-900/30' : 'bg-rose-900/30', icon: <Wallet className="w-5 h-5" />, sub: 'Sau thuế & chi phí' },
+              { label: 'CHI PHÍ PHÁT SINH', value: totalExpenses, color: 'text-rose-400', bg: 'bg-rose-900/30', icon: <Receipt className="w-5 h-5" />, sub: `${expenses.filter(e => e.expenseType !== 'tax').length} khoản` },
+              { label: 'THUẾ', value: totalTax, color: 'text-orange-400', bg: 'bg-orange-900/30', icon: <Tag className="w-5 h-5" />, sub: `${expenses.filter(e => e.expenseType === 'tax').length} phiếu TAX` },
             ].map(card => (
               <div key={card.label} className="bg-zinc-800/50 p-4 rounded-xl border border-zinc-700 shadow-xs flex items-center justify-between">
                 <div>
@@ -1024,29 +1170,27 @@ export default function Reports({ invoices, products, isManager = false, onSelec
               <span className="text-zinc-500"> − </span>
               <span className="text-rose-400">{formatVND(totalExpenses)}</span>
               <span className="text-zinc-500"> − </span>
-              <span className="text-orange-400">{formatVND(tax)}</span>
+              <span className="text-orange-400">{formatVND(totalTax)}</span>
               <span className="text-zinc-500"> = </span>
               <span className={`font-extrabold text-base ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatVND(netProfit)}</span>
             </div>
-            <p className="text-[10px] text-zinc-500">Doanh thu − Vốn nhập − Lương − Chi phí phát sinh − Thuế = Lợi nhuận ròng</p>
+            <p className="text-[10px] text-zinc-500">Doanh thu − Vốn nhập − Lương − Chi phí phát sinh − Thuế = Lợi nhuận ròng: <span className={`font-bold ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatVND(netProfit)}</span></p>
           </div>
 
           <div className="bg-zinc-800/50 rounded-xl border border-zinc-700 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-zinc-700 flex items-center justify-between">
               <div>
-                <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><Receipt className="w-4 h-4 text-rose-400" /> Chi phí phát sinh</h3>
-                <p className="text-xs text-zinc-500 mt-0.5">Các khoản chi ngoài lương và nhập hàng.</p>
+                <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2"><Receipt className="w-4 h-4 text-rose-400" /> Chi phí & Thuế</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">Các khoản chi phí phát sinh (CP) và thuế (TAX).</p>
               </div>
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5">
-                  <span className="text-xs text-zinc-400 font-bold whitespace-nowrap">Thuế:</span>
-                  <input type="number" min={0} value={tax} onChange={e => setTax(Number(e.target.value) || 0)}
-                    className="w-28 bg-transparent text-amber-400 font-mono text-sm focus:outline-none text-right" placeholder="0" />
-                  <span className="text-xs text-zinc-500">₫</span>
-                </div>
-                <button onClick={openAddExpense}
+                <button onClick={() => openAddExpense('expense')}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-700 hover:bg-rose-600 text-white rounded-lg text-xs font-bold cursor-pointer transition">
-                  <Plus className="w-3.5 h-3.5" /> Thêm
+                  <Plus className="w-3.5 h-3.5" /> Chi phí
+                </button>
+                <button onClick={() => openAddExpense('tax')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-700 hover:bg-orange-600 text-white rounded-lg text-xs font-bold cursor-pointer transition">
+                  <Plus className="w-3.5 h-3.5" /> Thuế
                 </button>
               </div>
             </div>
@@ -1062,34 +1206,65 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                 <table className="w-full text-sm text-left">
                   <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider">
                     <tr>
-                      <th className="px-4 py-3 w-10">STT</th>
+                      <th className="px-4 py-3 w-8"></th>
+                      <th className="px-4 py-3">Mã phiếu</th>
+                      <th className="px-4 py-3">Loại</th>
                       <th className="px-4 py-3">Nội dung</th>
                       <th className="px-4 py-3">Ngày</th>
                       <th className="px-4 py-3 text-right">Số tiền</th>
-                      <th className="px-4 py-3">Ghi chú</th>
                       <th className="px-4 py-3 w-20"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-700">
-                    {expenses.map((e, i) => (
-                      <tr key={e.id} className="hover:bg-zinc-800/20 transition">
-                        <td className="px-4 py-3 text-zinc-500 text-xs">{i + 1}</td>
-                        <td className="px-4 py-3 font-semibold text-zinc-100">{e.content}</td>
-                        <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{e.date}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-rose-400">{formatVND(e.amount)}</td>
-                        <td className="px-4 py-3 text-xs text-zinc-500">{e.notes ?? ''}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => openEditExpense(e)} className="p-1.5 text-zinc-500 hover:text-blue-400 rounded-lg transition cursor-pointer"><Pencil className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => setDeleteExpenseConfirm(e.id)} className="p-1.5 text-zinc-500 hover:text-rose-400 rounded-lg transition cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {expenses.map((e) => {
+                      const isOpen = expandedExpenseId === e.id;
+                      const isTax = e.expenseType === 'tax';
+                      return (
+                        <React.Fragment key={e.id}>
+                          <tr className={`hover:bg-zinc-800/20 transition cursor-pointer ${isOpen ? 'bg-zinc-800/30' : ''}`}
+                            onClick={() => setExpandedExpenseId(isOpen ? null : e.id)}>
+                            <td className="px-4 py-3 text-zinc-500">{isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}</td>
+                            <td className="px-4 py-3 font-mono text-xs font-bold text-zinc-300">{e.code ?? '—'}</td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${isTax ? 'bg-orange-900/40 text-orange-300' : 'bg-rose-900/40 text-rose-300'}`}>
+                                {isTax ? 'Thuế' : 'Chi phí'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-zinc-100">{e.content}</td>
+                            <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{e.date}</td>
+                            <td className={`px-4 py-3 text-right font-mono font-bold ${isTax ? 'text-orange-400' : 'text-rose-400'}`}>{formatVND(e.amount)}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1" onClick={ev => ev.stopPropagation()}>
+                                <button onClick={() => openEditExpense(e)} className="p-1.5 text-zinc-500 hover:text-blue-400 rounded-lg transition cursor-pointer"><Pencil className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => setDeleteExpenseConfirm(e.id)} className="p-1.5 text-zinc-500 hover:text-rose-400 rounded-lg transition cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                              </div>
+                            </td>
+                          </tr>
+                          {isOpen && (
+                            <tr className="bg-zinc-800/50">
+                              <td colSpan={7} className="px-8 py-3 text-xs text-zinc-400 space-y-1">
+                                <div className="flex gap-6 flex-wrap">
+                                  <span><span className="text-zinc-500">Mã phiếu:</span> <span className="font-mono font-bold text-zinc-300">{e.code ?? 'Chưa có mã'}</span></span>
+                                  <span><span className="text-zinc-500">Loại:</span> <span className={`font-bold ${isTax ? 'text-orange-300' : 'text-rose-300'}`}>{isTax ? 'Thuế (TAX)' : 'Chi phí phát sinh (CP)'}</span></span>
+                                  <span><span className="text-zinc-500">Ngày:</span> <span className="font-mono">{e.date}</span></span>
+                                  <span><span className="text-zinc-500">Số tiền:</span> <span className={`font-mono font-bold ${isTax ? 'text-orange-400' : 'text-rose-400'}`}>{formatVND(e.amount)}</span></span>
+                                  {e.notes && <span><span className="text-zinc-500">Ghi chú:</span> {e.notes}</span>}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                     <tr className="bg-rose-950/20 border-t-2 border-rose-800/50">
-                      <td colSpan={3} className="px-4 py-3 font-extrabold text-zinc-100">Tổng chi phí phát sinh</td>
+                      <td colSpan={5} className="px-4 py-3 font-extrabold text-zinc-100">Tổng chi phí phát sinh</td>
                       <td className="px-4 py-3 text-right font-extrabold font-mono text-rose-400">{formatVND(totalExpenses)}</td>
-                      <td colSpan={2}></td>
+                      <td></td>
+                    </tr>
+                    <tr className="bg-orange-950/20 border-t border-orange-800/30">
+                      <td colSpan={5} className="px-4 py-3 font-extrabold text-zinc-100">Tổng thuế</td>
+                      <td className="px-4 py-3 text-right font-extrabold font-mono text-orange-400">{formatVND(totalTax)}</td>
+                      <td></td>
                     </tr>
                   </tbody>
                 </table>
@@ -1530,14 +1705,29 @@ export default function Reports({ invoices, products, isManager = false, onSelec
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
               className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-2xl">
               <div className="flex items-center justify-between p-5 border-b border-zinc-700">
-                <h3 className="font-bold text-zinc-100">{editingExpenseId ? 'Sửa chi phí' : 'Thêm chi phí phát sinh'}</h3>
+                <h3 className="font-bold text-zinc-100 flex items-center gap-2">
+                  {expenseForm.expenseType === 'tax' ? <Tag className="w-4 h-4 text-orange-400" /> : <Receipt className="w-4 h-4 text-rose-400" />}
+                  {editingExpenseId ? 'Sửa phiếu' : expenseForm.expenseType === 'tax' ? 'Lập phiếu thuế' : 'Lập phiếu chi phí'}
+                </h3>
                 <button onClick={() => setShowExpenseForm(false)} className="text-zinc-500 hover:text-zinc-200 cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
               <div className="p-5 space-y-4">
                 <div>
+                  <label className="text-xs font-bold text-zinc-300 mb-2 block">Loại phiếu</label>
+                  <div className="flex gap-2">
+                    {([['expense', 'Chi phí phát sinh', 'CP'], ['tax', 'Thuế', 'TAX']] as const).map(([type, label, prefix]) => (
+                      <button key={type} type="button" onClick={() => setExpenseForm(f => ({ ...f, expenseType: type }))}
+                        className={`flex-1 py-2.5 rounded-lg text-xs font-bold border-2 transition cursor-pointer flex items-center justify-center gap-1.5 ${expenseForm.expenseType === type ? (type === 'tax' ? 'border-orange-500 bg-orange-900/30 text-orange-300' : 'border-rose-500 bg-rose-900/30 text-rose-300') : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'}`}>
+                        {type === 'tax' ? <Tag className="w-3.5 h-3.5" /> : <Receipt className="w-3.5 h-3.5" />}
+                        {label} <span className="text-zinc-500">({prefix}xxxx)</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
                   <label className="text-xs font-bold text-zinc-300 mb-1 block">Nội dung <span className="text-rose-500">*</span></label>
                   <input value={expenseForm.content} onChange={e => setExpenseForm(f => ({ ...f, content: e.target.value }))}
-                    className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-zinc-800 text-zinc-100" placeholder="VD: Tiền điện tháng 6" />
+                    className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-zinc-800 text-zinc-100" placeholder={expenseForm.expenseType === 'tax' ? 'VD: Thuế GTGT tháng 6' : 'VD: Tiền điện tháng 6'} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1556,13 +1746,18 @@ export default function Reports({ invoices, products, isManager = false, onSelec
                   <input value={expenseForm.notes} onChange={e => setExpenseForm(f => ({ ...f, notes: e.target.value }))}
                     className="w-full px-3 py-2 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-zinc-800 text-zinc-100" placeholder="Tuỳ chọn..." />
                 </div>
+                {!editingExpenseId && (
+                  <div className={`rounded-lg p-3 text-xs ${expenseForm.expenseType === 'tax' ? 'bg-orange-900/20 border border-orange-800/40 text-orange-300' : 'bg-rose-900/20 border border-rose-800/40 text-rose-300'}`}>
+                    Mã phiếu sẽ được tạo tự động: <span className="font-mono font-bold">{expenseForm.expenseType === 'tax' ? 'TAXxxxxx' : 'CPxxxxx'}</span>
+                  </div>
+                )}
                 {expenseSaveError && <p className="text-xs text-rose-400">{expenseSaveError}</p>}
               </div>
               <div className="flex gap-3 p-5 border-t border-zinc-700">
                 <button onClick={() => setShowExpenseForm(false)} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer hover:bg-zinc-800">Hủy</button>
                 <button onClick={handleSaveExpense} disabled={expenseSaving || !expenseForm.content.trim() || !expenseForm.amount || !expenseForm.date}
-                  className="flex-1 px-4 py-2 bg-rose-700 hover:bg-rose-600 disabled:!opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
-                  {expenseSaving ? 'Lưu...' : editingExpenseId ? 'Cập nhật' : 'Thêm chi phí'}
+                  className={`flex-1 px-4 py-2 disabled:!opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer ${expenseForm.expenseType === 'tax' ? 'bg-orange-700 hover:bg-orange-600' : 'bg-rose-700 hover:bg-rose-600'}`}>
+                  {expenseSaving ? 'Lưu...' : editingExpenseId ? 'Cập nhật' : 'Lập phiếu'}
                 </button>
               </div>
             </motion.div>
@@ -1581,6 +1776,156 @@ export default function Reports({ invoices, products, isManager = false, onSelec
               <div className="flex gap-3">
                 <button onClick={() => setDeleteExpenseConfirm(null)} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Không</button>
                 <button onClick={() => handleDeleteExpense(deleteExpenseConfirm)} className="flex-1 px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-lg text-sm font-bold cursor-pointer">Xóa</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Debtors Modal */}
+      <AnimatePresence>
+        {showDebtorsModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between p-5 border-b border-zinc-700">
+                <h3 className="font-bold text-zinc-100 flex items-center gap-2"><Users className="w-5 h-5 text-amber-400" /> Đối tác còn nợ ({debtByPartner.filter(p => p.remaining > 0).length})</h3>
+                <button onClick={() => setShowDebtorsModal(false)} className="text-zinc-400 hover:text-zinc-200 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="overflow-auto flex-1">
+                {debtByPartner.filter(p => p.remaining > 0).length === 0 ? (
+                  <div className="p-12 text-center text-zinc-500"><Users className="w-10 h-10 mx-auto mb-2 stroke-1" /><p className="text-sm">Không có đối tác còn nợ</p></div>
+                ) : (
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3">STT</th>
+                        <th className="px-4 py-3">Đối tác</th>
+                        <th className="px-4 py-3 text-right">Tổng nợ</th>
+                        <th className="px-4 py-3 text-right">Đã trả</th>
+                        <th className="px-4 py-3 text-right">Còn lại</th>
+                        <th className="px-4 py-3 w-32"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-700">
+                      {debtByPartner.filter(p => p.remaining > 0).map((p, i) => (
+                        <tr key={p.id} className="hover:bg-zinc-800/30 transition">
+                          <td className="px-4 py-3 text-zinc-500 text-xs">{i + 1}</td>
+                          <td className="px-4 py-3">
+                            <p className="font-bold text-zinc-100">{p.partnerName}</p>
+                            <p className="text-xs text-zinc-500">{p.orders.length} phiếu nhập</p>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-zinc-300">{formatVND(p.total)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-emerald-400">{formatVND(p.paid)}</td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-rose-400">{formatVND(p.remaining)}</td>
+                          <td className="px-4 py-3">
+                            <button onClick={() => { setShowDebtorsModal(false); setPayingAllPartner({ id: p.id, name: p.partnerName, remaining: p.remaining, orders: p.orders }); setPayingAllConfirmed(false); setPayingAllCash(false); }}
+                              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer transition whitespace-nowrap flex items-center gap-1">
+                              <CheckCheck className="w-3.5 h-3.5" /> Thanh toán
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Unpaid Salary Modal */}
+      <AnimatePresence>
+        {showUnpaidSalaryModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between p-5 border-b border-zinc-700">
+                <h3 className="font-bold text-zinc-100 flex items-center gap-2"><Users className="w-5 h-5 text-amber-400" /> Nhân viên chưa trả lương ({salaryUnpaidCount})</h3>
+                <button onClick={() => setShowUnpaidSalaryModal(false)} className="text-zinc-400 hover:text-zinc-200 cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="overflow-auto flex-1">
+                {salaryUnpaidCount === 0 ? (
+                  <div className="p-12 text-center text-zinc-500"><Users className="w-10 h-10 mx-auto mb-2 stroke-1" /><p className="text-sm">Không có nhân viên chưa được trả lương</p></div>
+                ) : (
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-zinc-800 border-b border-zinc-700 text-xs font-bold text-zinc-400 uppercase tracking-wider sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3">STT</th>
+                        <th className="px-4 py-3">Họ tên</th>
+                        <th className="px-4 py-3">Cách tính</th>
+                        <th className="px-4 py-3">Từ ngày</th>
+                        <th className="px-4 py-3">Đến ngày</th>
+                        <th className="px-4 py-3 text-right">Tổng lương</th>
+                        <th className="px-4 py-3 text-right">Còn lại</th>
+                        <th className="px-4 py-3 w-24"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-700">
+                      {salaryEntries.filter(e => getTotalSalary(e) - (e.paidAmount ?? 0) > 0).map((e, i) => {
+                        const total = getTotalSalary(e);
+                        const remaining = total - (e.paidAmount ?? 0);
+                        return (
+                          <tr key={e.id} className="hover:bg-zinc-800/30 transition">
+                            <td className="px-4 py-3 text-zinc-500 text-xs">{i + 1}</td>
+                            <td className="px-4 py-3">
+                              <p className="font-bold text-zinc-100">{e.fullName}</p>
+                              {e.phone && <p className="text-xs text-zinc-500 font-mono">{e.phone}</p>}
+                            </td>
+                            <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${e.calcType === 'lump' ? 'bg-blue-900/30 text-blue-300' : 'bg-purple-900/30 text-purple-300'}`}>{e.calcType === 'lump' ? 'Đợt' : 'Ngày'}</span></td>
+                            <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{e.dateFrom}</td>
+                            <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{e.dateTo}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-zinc-100">{formatVND(total)}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-rose-400">{formatVND(remaining)}</td>
+                            <td className="px-4 py-3">
+                              <button onClick={() => { setShowUnpaidSalaryModal(false); openPaySalary(e); }}
+                                className="px-2 py-1 bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 rounded-lg text-[11px] font-bold cursor-pointer transition whitespace-nowrap">Trả lương</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Pay All Partner Modal */}
+      <AnimatePresence>
+        {payingAllPartner && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl w-full max-w-md p-6">
+              <h3 className="font-bold text-zinc-100 mb-1 flex items-center gap-2"><CheckCheck className="w-5 h-5 text-emerald-400" /> Thanh toán tất cả công nợ</h3>
+              <p className="text-xs text-zinc-400 mb-4">{payingAllPartner.name}</p>
+              <div className="bg-zinc-800 rounded-xl p-4 mb-4 space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-zinc-300">Tổng còn nợ:</span><span className="font-mono font-bold text-rose-400">{formatVND(payingAllPartner.remaining)}</span></div>
+                <div className="flex justify-between"><span className="text-zinc-300">Số phiếu:</span><span className="font-mono">{payingAllPartner.orders.filter(o => o.totalAmount - o.paidAmount > 0).length} phiếu</span></div>
+                <p className="text-xs text-amber-400 border-t border-zinc-700 pt-2">Thanh toán toàn bộ {formatVND(payingAllPartner.remaining)} — không thể điều chỉnh số tiền.</p>
+              </div>
+              <div className="mb-4">
+                <p className="text-xs font-bold text-zinc-400 uppercase mb-2">Hình thức thanh toán</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setPayingAllCash(true)}
+                    className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold cursor-pointer transition ${payingAllCash ? 'border-amber-500 bg-amber-900/30 text-amber-300' : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                    <Banknote className="w-4 h-4" /> Tiền mặt
+                  </button>
+                  <button type="button" onClick={() => setPayingAllCash(false)}
+                    className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold cursor-pointer transition ${!payingAllCash ? 'border-blue-500 bg-blue-900/30 text-blue-300' : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                    <Building2 className="w-4 h-4" /> Chuyển khoản
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setPayingAllPartner(null)} className="flex-1 px-4 py-2 border border-zinc-600 text-zinc-300 rounded-lg text-sm font-bold cursor-pointer">Hủy</button>
+                <button onClick={handlePayAllPartner} disabled={payingAllSaving}
+                  className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer">
+                  {payingAllSaving ? 'Đang xử lý...' : 'Xác nhận thanh toán'}
+                </button>
               </div>
             </motion.div>
           </div>

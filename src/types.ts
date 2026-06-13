@@ -149,7 +149,9 @@ export interface SalaryEntry {
 
 export interface Expense {
   id: string;
-  content: string;   // Nội dung chi phí
+  code?: string;              // CPxxxx or TAXxxxx
+  expenseType?: 'expense' | 'tax'; // loại phiếu
+  content: string;
   amount: number;
   notes?: string;
   date: string;      // YYYY-MM-DD

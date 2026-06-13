@@ -489,6 +489,8 @@ export async function fetchExpenses(): Promise<Expense[]> {
   if (error) throw error;
   return data.map(r => ({
     id: r.id,
+    code: r.code ?? undefined,
+    expenseType: (r.expense_type ?? 'expense') as 'expense' | 'tax',
     content: r.content,
     amount: r.amount,
     notes: r.notes ?? undefined,
@@ -499,7 +501,10 @@ export async function fetchExpenses(): Promise<Expense[]> {
 
 export async function insertExpense(e: Expense): Promise<void> {
   const { error } = await supabase.from('expenses').insert({
-    id: e.id, content: e.content, amount: e.amount,
+    id: e.id,
+    code: e.code ?? null,
+    expense_type: e.expenseType ?? 'expense',
+    content: e.content, amount: e.amount,
     notes: e.notes ?? null, date: e.date, created_at: e.createdAt,
   });
   if (error) throw error;
@@ -507,6 +512,8 @@ export async function insertExpense(e: Expense): Promise<void> {
 
 export async function updateExpense(e: Expense): Promise<void> {
   const { error } = await supabase.from('expenses').update({
+    code: e.code ?? null,
+    expense_type: e.expenseType ?? 'expense',
     content: e.content, amount: e.amount,
     notes: e.notes ?? null, date: e.date,
     updated_at: new Date().toISOString(),

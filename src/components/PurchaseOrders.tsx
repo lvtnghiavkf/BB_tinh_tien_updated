@@ -168,6 +168,19 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   const draftTotal = useMemo(() =>
     draftItems.reduce((s, it) => s + it.quantity * it.unitCost, 0), [draftItems]);
 
+  const orderStats = useMemo(() => {
+    const imports = orders.filter(o => o.type === 'import');
+    const exports = orders.filter(o => o.type === 'export');
+    const totalDebt = imports.reduce((s, o) => s + (o.totalAmount - o.paidAmount), 0);
+    return {
+      importCount: imports.length,
+      importTotal: imports.reduce((s, o) => s + o.totalAmount, 0),
+      exportCount: exports.length,
+      exportTotal: exports.reduce((s, o) => s + o.totalAmount, 0),
+      totalDebt,
+    };
+  }, [orders]);
+
   function resetCreate() {
     setDraftType('import');
     setDraftPartnerId('');
@@ -375,6 +388,34 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
           className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition cursor-pointer whitespace-nowrap">
           <Plus className="w-4 h-4" /> Tạo phiếu
         </button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="bg-zinc-800/50 p-4 rounded-xl border border-zinc-700">
+          <div className="flex items-center gap-2 mb-2">
+            <ArrowDownToLine className="w-4 h-4 text-blue-400" />
+            <span className="text-xs font-bold text-zinc-400 uppercase">Tổng nhập hàng</span>
+          </div>
+          <p className="text-xl font-extrabold text-blue-300 font-mono">{orderStats.importCount}</p>
+          <p className="text-xs text-zinc-500 font-mono mt-0.5">{formatVND(orderStats.importTotal)}</p>
+        </div>
+        <div className="bg-zinc-800/50 p-4 rounded-xl border border-zinc-700">
+          <div className="flex items-center gap-2 mb-2">
+            <ArrowUpFromLine className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-bold text-zinc-400 uppercase">Tổng xuất hàng</span>
+          </div>
+          <p className="text-xl font-extrabold text-amber-300 font-mono">{orderStats.exportCount}</p>
+          <p className="text-xs text-zinc-500 font-mono mt-0.5">{formatVND(orderStats.exportTotal)}</p>
+        </div>
+        <div className="bg-zinc-800/50 p-4 rounded-xl border border-zinc-700">
+          <div className="flex items-center gap-2 mb-2">
+            <Banknote className="w-4 h-4 text-rose-400" />
+            <span className="text-xs font-bold text-zinc-400 uppercase">Còn nợ NCC</span>
+          </div>
+          <p className={`text-xl font-extrabold font-mono ${orderStats.totalDebt > 0 ? 'text-rose-300' : 'text-emerald-300'}`}>{formatVND(orderStats.totalDebt)}</p>
+          <p className="text-xs text-zinc-500 mt-0.5">Tổng công nợ chưa thanh toán</p>
+        </div>
       </div>
 
       {/* List */}
