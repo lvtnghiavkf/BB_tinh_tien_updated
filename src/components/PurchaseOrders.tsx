@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Product, Partner, PurchaseOrder, PaymentLog } from '../types';
-import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, ChevronsUpDown, Search, Download, ChevronDown, GitBranch, History, Banknote, Building2 } from 'lucide-react';
+import { Plus, Trash2, X, ArrowDownToLine, ArrowUpFromLine, ChevronsUpDown, Search, Download, ChevronDown, GitBranch, History, Banknote, Building2, Scan } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { insertPaymentLog } from '../lib/db';
@@ -20,7 +20,7 @@ interface PurchaseOrdersProps {
 const formatVND = (v: number) => v.toLocaleString('vi-VN') + ' ₫';
 
 type OrderType = 'all' | 'import' | 'export';
-type DraftItem = { productId: string; productName: string; sku: string; quantity: number; unitCost: number };
+type DraftItem = { productId: string; productName: string; sku: string; quantity: number; unitCost: number; barcodeInput: string };
 
 export default function PurchaseOrders({ products, partners, orders, onAdd, onUpdate, onDelete, onUpdateProductsStock, paymentLogs = [], onPaymentLogAdded }: PurchaseOrdersProps) {
   const [typeFilter, setTypeFilter] = useState<OrderType>('all');
@@ -42,7 +42,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
   const [showPartnerDropdown, setShowPartnerDropdown] = useState(false);
   const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0, 16));
   const [draftNotes, setDraftNotes] = useState('');
-  const [draftItems, setDraftItems] = useState<DraftItem[]>([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }]);
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0, barcodeInput: '' }]);
 
   // Revision system state
   const [revisingOrder, setRevisingOrder] = useState<PurchaseOrder | null>(null);
@@ -155,7 +155,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
     setShowPartnerDropdown(false);
     setDraftDate(new Date().toISOString().slice(0, 16));
     setDraftNotes('');
-    setDraftItems([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }]);
+    setDraftItems([{ productId: '', productName: '', sku: '', quantity: 1, unitCost: 0, barcodeInput: '' }]);
     setRevisingOrder(null);
     setReviseNotes('');
   }
@@ -179,6 +179,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       sku: it.sku,
       quantity: it.quantity,
       unitCost: it.unitCost,
+      barcodeInput: '',
     })));
     setReviseNotes('');
     setShowCreate(true);
@@ -192,7 +193,18 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
       productName: prod?.name ?? '',
       sku: prod?.sku ?? '',
       unitCost: prod?.costPrice ?? 0,
+      barcodeInput: '',
     } : it));
+  }
+
+  function handleBarcodeInput(idx: number, value: string) {
+    setDraftItems(prev => prev.map((it, i) => i === idx ? { ...it, barcodeInput: value } : it));
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const match = products.find(p =>
+      (p.barcode && p.barcode === trimmed) || p.sku === trimmed
+    );
+    if (match) setItemProduct(idx, match.id);
   }
 
   async function handleCreate() {
@@ -411,7 +423,8 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                               <tr className="text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100 bg-slate-50">
                                 <th className="px-3 pb-2 pt-1 text-center w-8">STT</th>
                                 <th className="px-2 pb-2 pt-1 text-center w-10">Ảnh</th>
-                                <th className="px-3 pb-2 pt-1 text-left">Mã hàng</th>
+                                <th className="px-3 pb-2 pt-1 text-left">Mã SKU</th>
+                                <th className="px-3 pb-2 pt-1 text-left">Barcode</th>
                                 <th className="px-3 pb-2 pt-1 text-left">Tên hàng</th>
                                 <th className="px-3 pb-2 pt-1 text-left">Thương Hiệu</th>
                                 <th className="px-3 pb-2 pt-1 text-center">ĐVT</th>
@@ -436,7 +449,16 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                                         <div className="w-8 h-8 rounded-md border border-dashed border-slate-300 bg-slate-50 mx-auto" />
                                       )}
                                     </td>
-                                    <td className="px-3 py-2 font-mono text-slate-500">{it.sku}</td>
+                                    <td className="px-3 py-2">
+                                      {it.sku
+                                        ? <span className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-600 text-amber-400 font-mono text-[11px] rounded font-bold">{it.sku}</span>
+                                        : <span className="text-slate-400">—</span>}
+                                    </td>
+                                    <td className="px-3 py-2 font-mono text-slate-500 text-xs">
+                                      {prod?.barcode
+                                        ? <span className="flex items-center gap-1"><Scan className="w-3 h-3 text-slate-400 shrink-0" />{prod.barcode}</span>
+                                        : <span className="text-slate-400">—</span>}
+                                    </td>
                                     <td className="px-3 py-2 font-medium">{it.productName}</td>
                                     <td className="px-3 py-2 text-slate-500">{prod?.brand || '—'}</td>
                                     <td className="px-3 py-2 text-center text-slate-500">{prod?.unit || '—'}</td>
@@ -452,7 +474,7 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                             </tbody>
                             <tfoot>
                               <tr className="border-t-2 border-slate-200 font-bold text-slate-800 bg-slate-50">
-                                <td colSpan={11} className="px-3 pt-2 pb-1 text-right">Tổng cộng:</td>
+                                <td colSpan={13} className="px-3 pt-2 pb-1 text-right">Tổng cộng:</td>
                                 <td className="px-3 pt-2 pb-1 text-right font-mono text-blue-700">{formatVND(o.totalAmount)}</td>
                               </tr>
                             </tfoot>
@@ -663,17 +685,19 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-bold text-slate-600">Danh sách hàng hóa</label>
-                    <button onClick={() => setDraftItems(prev => [...prev, { productId: '', productName: '', sku: '', quantity: 1, unitCost: 0 }])}
+                    <button onClick={() => setDraftItems(prev => [...prev, { productId: '', productName: '', sku: '', quantity: 1, unitCost: 0, barcodeInput: '' }])}
                       className="text-xs text-blue-600 hover:text-blue-700 font-bold cursor-pointer flex items-center gap-1">
                       <Plus className="w-3.5 h-3.5" /> Thêm dòng
                     </button>
                   </div>
                   <div className="overflow-x-auto -mx-5 px-5">
-                    <table className="w-full text-xs min-w-[700px]">
+                    <table className="w-full text-xs min-w-[900px]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
                           <th className="px-2 py-2 text-left w-6">#</th>
                           <th className="px-2 py-2 text-left">Sản phẩm</th>
+                          <th className="px-2 py-2 text-left w-24">Mã SKU</th>
+                          <th className="px-2 py-2 text-left w-28">Barcode</th>
                           <th className="px-2 py-2 text-center">Thương Hiệu</th>
                           <th className="px-2 py-2 text-center">ĐVT</th>
                           <th className="px-2 py-2 text-right">Tồn kho</th>
@@ -696,9 +720,30 @@ export default function PurchaseOrders({ products, partners, orders, onAdd, onUp
                                   className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[160px]">
                                   <option value="">— Chọn sản phẩm —</option>
                                   {products.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
+                                    <option key={p.id} value={p.id}>{p.name}</option>
                                   ))}
                                 </select>
+                              </td>
+                              {/* Mã SKU */}
+                              <td className="px-2 py-1.5">
+                                {item.sku
+                                  ? <span className="inline-block px-2 py-0.5 bg-zinc-800 border border-zinc-600 text-amber-400 font-mono text-xs rounded font-bold">{item.sku}</span>
+                                  : <span className="text-slate-400 text-xs">—</span>}
+                              </td>
+                              {/* Barcode */}
+                              <td className="px-2 py-1.5">
+                                <div className="relative">
+                                  <Scan className="absolute left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                  <input
+                                    value={item.productId
+                                      ? (products.find(p => p.id === item.productId)?.barcode ?? item.barcodeInput)
+                                      : item.barcodeInput}
+                                    onChange={e => handleBarcodeInput(idx, e.target.value)}
+                                    placeholder="Quét / nhập..."
+                                    readOnly={!!item.productId}
+                                    className={`w-full pl-6 pr-2 py-1 border rounded text-xs font-mono focus:outline-none min-w-[90px] ${item.productId ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-default' : 'border-slate-300 bg-white focus:border-blue-500 text-slate-700'}`}
+                                  />
+                                </div>
                               </td>
                               <td className="px-2 py-1.5 text-center text-slate-500">{prod?.brand || '—'}</td>
                               <td className="px-2 py-1.5 text-center text-slate-500">{prod?.unit || '—'}</td>
