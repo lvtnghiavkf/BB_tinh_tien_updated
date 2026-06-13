@@ -166,16 +166,19 @@ export default function Inventory({
     if (!expandedId) return [];
     const ep = products.find(pr => pr.id === expandedId);
     if (!ep) return [];
-    const entries: { inv: Invoice; qty: number; unitPrice: number }[] = [];
+    // Lấy TẤT CẢ giao dịch kể cả đã hủy
+    const allEntries: { inv: Invoice; qty: number; unitPrice: number; cancelled: boolean }[] = [];
     invoices.forEach(inv => {
-      if ((inv.status ?? 'completed') === 'cancelled') return;
+      const isCancelled = (inv.status ?? 'completed') === 'cancelled';
       const item = inv.items.find(it => it.product.id === expandedId);
-      if (item) entries.push({ inv, qty: item.quantity, unitPrice: item.product.sellingPrice });
+      if (item) allEntries.push({ inv, qty: item.quantity, unitPrice: item.product.sellingPrice, cancelled: isCancelled });
     });
-    entries.sort((a, b) => new Date(b.inv.timestamp).getTime() - new Date(a.inv.timestamp).getTime());
+    allEntries.sort((a, b) => new Date(b.inv.timestamp).getTime() - new Date(a.inv.timestamp).getTime());
+    // Đi ngược từ tồn kho hiện tại, chỉ tính tồn cuối cho giao dịch KHÔNG hủy
     let running = ep.stock;
-    const result = entries.map(e => {
-      const tonCuoi = running;
+    const result = allEntries.map(e => {
+      if (e.cancelled) return { ...e, tonCuoi: null as number | null };
+      const tonCuoi: number | null = running;
       running += e.qty;
       return { ...e, tonCuoi };
     });
@@ -913,16 +916,14 @@ export default function Inventory({
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-zinc-800">
-                                        {ledgerEntries.map(({ inv, qty, unitPrice, tonCuoi }) => {
-                                          const cancelled = (inv.status ?? 'completed') === 'cancelled';
-                                          return (
-                                            <tr key={inv.id} className={`transition ${cancelled ? 'opacity-50' : 'hover:bg-zinc-800/40'}`}>
+                                        {ledgerEntries.map(({ inv, qty, unitPrice, tonCuoi, cancelled }) => (
+                                            <tr key={inv.id} className={`transition ${cancelled ? 'opacity-40 bg-rose-950/10' : 'hover:bg-zinc-800/40'}`}>
                                               <td className="px-3 py-2.5">
                                                 <button onClick={() => openLedgerInvoice(inv)}
-                                                  className="font-mono font-bold text-amber-400 hover:text-amber-300 hover:underline cursor-pointer">
+                                                  className={`font-mono font-bold hover:underline cursor-pointer ${cancelled ? 'text-rose-400 line-through' : 'text-amber-400 hover:text-amber-300'}`}>
                                                   {inv.id}
                                                 </button>
-                                                {cancelled && <span className="ml-1.5 text-[9px] text-rose-400 font-bold border border-rose-700/50 rounded px-1 py-0.5">Hủy</span>}
+                                                {cancelled && <span className="ml-1.5 text-[9px] text-rose-400 font-bold border border-rose-700/60 rounded px-1 py-0.5 bg-rose-950/40">ĐÃ HỦY</span>}
                                               </td>
                                               <td className="px-3 py-2.5 text-zinc-400 whitespace-nowrap font-mono">
                                                 {new Date(inv.timestamp).toLocaleDateString('vi-VN')} {new Date(inv.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
@@ -933,15 +934,16 @@ export default function Inventory({
                                               <td className="px-3 py-2.5 text-center text-zinc-400 whitespace-nowrap">
                                                 {PM_LABEL_INV[inv.paymentMethod] ?? inv.paymentMethod}
                                               </td>
-                                              <td className="px-3 py-2.5 text-right font-mono text-amber-400">{formatVND(unitPrice)}</td>
+                                              <td className={`px-3 py-2.5 text-right font-mono ${cancelled ? 'text-zinc-600 line-through' : 'text-amber-400'}`}>{formatVND(unitPrice)}</td>
                                               <td className="px-3 py-2.5 text-right font-mono text-zinc-400">
                                                 {inv.discountPercent > 0 ? `${inv.discountPercent}%` : inv.discountAmount > 0 ? formatVND(inv.discountAmount) : '—'}
                                               </td>
-                                              <td className="px-3 py-2.5 text-right font-mono font-bold text-rose-400">−{qty}</td>
-                                              <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">{tonCuoi}</td>
+                                              <td className={`px-3 py-2.5 text-right font-mono font-bold ${cancelled ? 'text-zinc-600 line-through' : 'text-rose-400'}`}>−{qty}</td>
+                                              <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-400">
+                                                {tonCuoi !== null ? tonCuoi : <span className="text-zinc-600">—</span>}
+                                              </td>
                                             </tr>
-                                          );
-                                        })}
+                                          ))}
                                       </tbody>
                                     </table>
                                   </div>
