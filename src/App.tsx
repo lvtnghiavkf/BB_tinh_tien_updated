@@ -160,6 +160,19 @@ export default function App() {
   };
 
   const handleUpdateInvoice = async (inv: Invoice) => {
+    const previous = invoices.find(x => x.id === inv.id);
+    // Restore stock when a completed invoice is cancelled
+    if (previous && (previous.status ?? 'completed') !== 'cancelled' && inv.status === 'cancelled') {
+      const snap = products;
+      for (const item of previous.items) {
+        const product = snap.find(p => p.id === item.product.id);
+        if (product) await dbUpdateProduct({ ...product, stock: product.stock + item.quantity });
+      }
+      setProducts(prev => prev.map(p => {
+        const restored = previous.items.find(it => it.product.id === p.id);
+        return restored ? { ...p, stock: p.stock + restored.quantity } : p;
+      }));
+    }
     await dbUpdateInvoice(inv);
     setInvoices(prev => prev.map(x => x.id === inv.id ? inv : x));
   };

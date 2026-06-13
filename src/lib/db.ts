@@ -15,6 +15,7 @@ export async function updateInvoice(inv: Invoice): Promise<void> {
     notes: inv.notes ?? null,
     status: inv.status ?? 'completed',
     payment_status: inv.paymentStatus ?? 'paid',
+    is_adjusted: inv.isAdjusted ?? false,
   }).eq('id', inv.id);
   if (error) throw error;
 
@@ -164,6 +165,7 @@ export async function fetchInvoices(): Promise<Invoice[]> {
     notes: r.notes ?? undefined,
     status: (r.status ?? 'completed') as 'completed' | 'cancelled',
     paymentStatus: (r.payment_status ?? 'paid') as 'paid' | 'unpaid',
+    isAdjusted: r.is_adjusted ?? false,
   }));
 }
 

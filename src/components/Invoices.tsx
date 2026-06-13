@@ -4,6 +4,7 @@ import {
   Search, FileText, X, Printer, Ban,
   ChevronDown, CreditCard, Banknote, QrCode,
   CheckCircle2, AlertTriangle, Pencil, Check,
+  Receipt, ReceiptX, FilePenLine,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
@@ -58,29 +59,53 @@ export default function Invoices({
   const [timeFilter, setTimeFilter] = useState<'1' | '3' | '7' | '30' | 'custom'>('30');
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
+  const [showAdjustedOnly, setShowAdjustedOnly] = useState(false);
 
   const sorted = useMemo(
     () => [...invoices].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
     [invoices],
   );
 
-  const filtered = useMemo(() => {
+  const { dateFrom, dateTo } = useMemo(() => {
     const now = new Date();
     now.setHours(23, 59, 59, 999);
-    let dateFrom: Date | null = null;
-    let dateTo: Date | null = now;
-    if (timeFilter === '1') { dateFrom = new Date(now); dateFrom.setHours(0, 0, 0, 0); }
-    else if (timeFilter === '3') { dateFrom = new Date(now); dateFrom.setDate(dateFrom.getDate() - 2); dateFrom.setHours(0, 0, 0, 0); }
-    else if (timeFilter === '7') { dateFrom = new Date(now); dateFrom.setDate(dateFrom.getDate() - 6); dateFrom.setHours(0, 0, 0, 0); }
-    else if (timeFilter === '30') { dateFrom = new Date(now); dateFrom.setDate(dateFrom.getDate() - 29); dateFrom.setHours(0, 0, 0, 0); }
+    let df: Date | null = null;
+    let dt: Date | null = now;
+    if (timeFilter === '1') { df = new Date(now); df.setHours(0, 0, 0, 0); }
+    else if (timeFilter === '3') { df = new Date(now); df.setDate(df.getDate() - 2); df.setHours(0, 0, 0, 0); }
+    else if (timeFilter === '7') { df = new Date(now); df.setDate(df.getDate() - 6); df.setHours(0, 0, 0, 0); }
+    else if (timeFilter === '30') { df = new Date(now); df.setDate(df.getDate() - 29); df.setHours(0, 0, 0, 0); }
     else if (timeFilter === 'custom' && customDateFrom) {
-      dateFrom = new Date(customDateFrom + 'T00:00:00');
-      dateTo = customDateTo ? new Date(customDateTo + 'T23:59:59') : now;
+      df = new Date(customDateFrom + 'T00:00:00');
+      dt = customDateTo ? new Date(customDateTo + 'T23:59:59') : now;
     }
-    let list = sorted;
-    if (dateFrom) list = list.filter(i => { const t = new Date(i.timestamp).getTime(); return t >= dateFrom!.getTime() && t <= dateTo!.getTime(); });
+    return { dateFrom: df, dateTo: dt };
+  }, [timeFilter, customDateFrom, customDateTo]);
+
+  const inRange = (inv: Invoice) => {
+    if (!dateFrom) return true;
+    const t = new Date(inv.timestamp).getTime();
+    return t >= dateFrom.getTime() && t <= (dateTo ?? new Date()).getTime();
+  };
+
+  const rangeList = useMemo(() => sorted.filter(inRange), [sorted, dateFrom, dateTo]);
+
+  const stats = useMemo(() => {
+    const all     = rangeList.filter(i => (i.status ?? 'completed') !== 'cancelled');
+    const cancelled = rangeList.filter(i => i.status === 'cancelled');
+    const adjusted  = rangeList.filter(i => i.isAdjusted);
+    return {
+      all:       { count: all.length,       amount: all.reduce((s, i) => s + i.finalAmount, 0) },
+      cancelled: { count: cancelled.length, amount: cancelled.reduce((s, i) => s + i.finalAmount, 0) },
+      adjusted:  { count: adjusted.length,  amount: adjusted.reduce((s, i) => s + i.finalAmount, 0) },
+    };
+  }, [rangeList]);
+
+  const filtered = useMemo(() => {
+    let list = rangeList;
     if (pmFilter) list = list.filter(i => i.paymentMethod === pmFilter);
     if (statusFilter) list = list.filter(i => (i.status ?? 'completed') === statusFilter);
+    if (showAdjustedOnly) list = list.filter(i => i.isAdjusted);
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(i =>
@@ -90,7 +115,7 @@ export default function Invoices({
       );
     }
     return list;
-  }, [sorted, search, pmFilter, statusFilter, timeFilter, customDateFrom, customDateTo]);
+  }, [rangeList, search, pmFilter, statusFilter, showAdjustedOnly]);
 
   const isCancelled = (inv: Invoice) => (inv.status ?? 'completed') === 'cancelled';
 
@@ -163,6 +188,7 @@ export default function Invoices({
         discountAmount: editDiscAmt,
         totalAmount: editTotal,
         finalAmount: editFinal,
+        isAdjusted: true,
         items: valid.map(it => {
           const orig = editInv.items.find(x => x.product.id === it.productId);
           if (orig) return { ...orig, quantity: it.qty };
@@ -193,8 +219,50 @@ export default function Invoices({
     }
   }
 
+  const fmtShort = (v: number) => v >= 1_000_000
+    ? (v / 1_000_000).toFixed(1).replace(/\.0$/, '') + ' tr'
+    : v >= 1_000 ? (v / 1_000).toFixed(0) + ' k' : String(v);
+
+  const activeCard = showAdjustedOnly ? 'adjusted' : statusFilter === 'cancelled' ? 'cancelled' : 'all';
+
   return (
     <div className="space-y-4">
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-3">
+        {/* Tổng hóa đơn */}
+        <button type="button" onClick={() => { setStatusFilter(''); setShowAdjustedOnly(false); }}
+          className={`text-left p-4 rounded-xl border transition cursor-pointer ${activeCard === 'all' ? 'border-blue-500 bg-blue-900/20' : 'border-zinc-700 bg-zinc-900 hover:border-zinc-500'}`}>
+          <div className="flex items-center gap-2 mb-2">
+            <Receipt className={`w-4 h-4 ${activeCard === 'all' ? 'text-blue-400' : 'text-zinc-500'}`} />
+            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Tổng hóa đơn</span>
+          </div>
+          <p className={`text-2xl font-extrabold font-mono ${activeCard === 'all' ? 'text-blue-300' : 'text-zinc-100'}`}>{stats.all.count}</p>
+          <p className="text-xs text-zinc-500 font-mono mt-0.5">{fmtShort(stats.all.amount)} ₫</p>
+        </button>
+
+        {/* Hóa đơn hủy */}
+        <button type="button" onClick={() => { setStatusFilter('cancelled'); setShowAdjustedOnly(false); }}
+          className={`text-left p-4 rounded-xl border transition cursor-pointer ${activeCard === 'cancelled' ? 'border-rose-500 bg-rose-900/20' : 'border-zinc-700 bg-zinc-900 hover:border-zinc-500'}`}>
+          <div className="flex items-center gap-2 mb-2">
+            <ReceiptX className={`w-4 h-4 ${activeCard === 'cancelled' ? 'text-rose-400' : 'text-zinc-500'}`} />
+            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Hóa đơn hủy</span>
+          </div>
+          <p className={`text-2xl font-extrabold font-mono ${activeCard === 'cancelled' ? 'text-rose-300' : 'text-zinc-100'}`}>{stats.cancelled.count}</p>
+          <p className="text-xs text-zinc-500 font-mono mt-0.5">{fmtShort(stats.cancelled.amount)} ₫</p>
+        </button>
+
+        {/* Hóa đơn điều chỉnh */}
+        <button type="button" onClick={() => { setStatusFilter(''); setShowAdjustedOnly(true); }}
+          className={`text-left p-4 rounded-xl border transition cursor-pointer ${activeCard === 'adjusted' ? 'border-amber-500 bg-amber-900/20' : 'border-zinc-700 bg-zinc-900 hover:border-zinc-500'}`}>
+          <div className="flex items-center gap-2 mb-2">
+            <FilePenLine className={`w-4 h-4 ${activeCard === 'adjusted' ? 'text-amber-400' : 'text-zinc-500'}`} />
+            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Đã điều chỉnh</span>
+          </div>
+          <p className={`text-2xl font-extrabold font-mono ${activeCard === 'adjusted' ? 'text-amber-300' : 'text-zinc-100'}`}>{stats.adjusted.count}</p>
+          <p className="text-xs text-zinc-500 font-mono mt-0.5">{fmtShort(stats.adjusted.amount)} ₫</p>
+        </button>
+      </div>
+
       {/* Time filter */}
       <div className="flex flex-wrap items-center gap-2">
         {(['1', '3', '7', '30', 'custom'] as const).map(t => (

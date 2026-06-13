@@ -256,6 +256,7 @@ export default function Inventory({
         discountAmount: lDiscAmt,
         totalAmount: lTotal,
         finalAmount: lTotal - lDiscAmt,
+        isAdjusted: true,
         items: valid.map(it => {
           const orig = ledgerInvoice.items.find(x => x.product.id === it.productId);
           if (orig) return { ...orig, quantity: it.qty };

@@ -40,6 +40,7 @@ export interface Invoice {
   notes?: string;
   status?: 'completed' | 'cancelled';
   paymentStatus?: 'paid' | 'unpaid';
+  isAdjusted?: boolean;
 }
 
 export interface StoreConfig {

@@ -222,8 +222,16 @@ create table if not exists public.payment_logs (
 );
 
 alter table public.payment_logs enable row level security;
-create policy if not exists "public_all_payment_logs" on public.payment_logs for all using (true) with check (true);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'payment_logs' AND policyname = 'public_all_payment_logs'
+  ) THEN
+    EXECUTE 'CREATE POLICY "public_all_payment_logs" ON public.payment_logs FOR ALL USING (true) WITH CHECK (true)';
+  END IF;
+END $$;
 
 -- ── Cột mở rộng cho invoices ──────────────────────────────────
-alter table public.invoices add column if not exists notes   text;
-alter table public.invoices add column if not exists status  text not null default 'completed';
+alter table public.invoices add column if not exists notes          text;
+alter table public.invoices add column if not exists status         text not null default 'completed';
+alter table public.invoices add column if not exists payment_status text not null default 'paid';
+alter table public.invoices add column if not exists is_adjusted    boolean not null default false;
